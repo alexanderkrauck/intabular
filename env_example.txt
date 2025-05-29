@@ -2,8 +2,4 @@
 # Get your API key from: https://platform.openai.com/api-keys
 # Copy this file to .env and add your actual API key
 
-# For full AI-powered functionality (recommended):
 OPENAI_API_KEY=YOUR_KEY_HERE
-
-# Note: The system works without an API key using intelligent fallback mode,
-# but OpenAI provides much better semantic understanding and merging strategies.
