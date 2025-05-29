@@ -1,0 +1,361 @@
+# ========================
+# Python Package Development
+# ========================
+
+# Virtual environments
+venv/
+env/
+.venv/
+.env/
+ENV/
+env.bak/
+venv.bak/
+
+# Python bytecode and cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+cover/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# IPython
+profile_default/
+ipython_config.py
+
+# pyenv
+.python-version
+
+# pipenv
+Pipfile.lock
+
+# poetry
+poetry.lock
+
+# celery beat schedule file
+celerybeat-schedule
+celerybeat.pid
+
+# SageMath parsed files
+*.sage.py
+
+# Spyder project settings
+.spyderproject
+.spyproject
+
+# Rope project settings
+.ropeproject
+
+# mkdocs documentation
+/site
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Pyre type checker
+.pyre/
+
+# pytype static type analyzer
+.pytype/
+
+# Cython debug symbols
+cython_debug/
+
+# ========================
+# Sensitive Configuration & Data
+# ========================
+
+# Environment files with secrets
+.env
+.env.*
+!.env.example
+*.env
+
+# Email configuration (contains credentials)
+smtp_config.json
+imap_config.json
+email_config.json
+*_config.json
+!config_example.json
+
+# API keys and tokens
+*.key
+*.pem
+*.crt
+*.p12
+api_keys.txt
+tokens.txt
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# ========================
+# Data Files (Potentially Sensitive)
+# ========================
+
+# CSV data files (may contain personal/business data)
+*.csv
+!example*.csv
+!sample*.csv
+!demo_small.csv
+
+# Email data
+emails.csv
+contacts.csv
+leads.csv
+
+# Generated output files
+parsed_leads.csv
+outreach_ready.csv
+*_output.csv
+*_demo.csv
+*_test.csv
+*_export.csv
+*_import.csv
+processed_*.csv
+enriched_*.csv
+
+# Excel files
+*.xlsx
+*.xls
+
+# JSON data files
+data/*.json
+exports/*.json
+imports/*.json
+
+# ========================
+# Development & Testing
+# ========================
+
+# AI Sandbox - Development/testing directory
+.aisandbox/*.json
+.aisandbox/*.csv
+.aisandbox/*.xlsx
+.aisandbox/*.log
+.aisandbox/temp/
+.aisandbox/output/
+# Keep .aisandbox/ directory and .md files for documentation
+
+# Temporary files
+temp/
+tmp/
+*.tmp
+*.temp
+*~
+
+# Log files
+*.log
+logs/
+log/
+
+# Backup files
+*.bak
+*.backup
+*.old
+
+# ========================
+# IDE and Editor Files
+# ========================
+
+# Visual Studio Code
+.vscode/
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+*.code-workspace
+
+# PyCharm
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# Vim
+*.swp
+*.swo
+*~
+.netrwhist
+
+# Emacs
+*~
+\#*\#
+/.emacs.desktop
+/.emacs.desktop.lock
+*.elc
+auto-save-list
+tramp
+.\#*
+
+# Atom
+.atom/
+
+# ========================
+# Operating System Files
+# ========================
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+.DocumentRevisions-V100
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+.AppleDB
+.AppleDesktop
+Network Trash Folder
+Temporary Items
+.apdisk
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+*.stackdump
+[Dd]esktop.ini
+$RECYCLE.BIN/
+*.cab
+*.msi
+*.msix
+*.msm
+*.msp
+*.lnk
+
+# Linux
+*~
+.fuse_hidden*
+.directory
+.Trash-*
+.nfs*
+
+# ========================
+# Cloud Storage
+# ========================
+
+# Dropbox
+.dropbox
+.dropbox.attr
+.dropbox.cache
+
+# Google Drive
+.gd_generated_credentials
+
+# OneDrive
+*.tmp
+
+# ========================
+# Security & Compliance
+# ========================
+
+# Security scan results
+.snyk
+security_scan_results.txt
+
+# Compliance reports
+gdpr_audit.txt
+privacy_scan.txt
+
+# ========================
+# Documentation Build
+# ========================
+
+# Sphinx documentation
+docs/_build/
+docs/build/
+.doctrees
+
+# LaTeX
+*.aux
+*.bbl
+*.blg
+*.fdb_latexmk
+*.fls
+*.log
+*.out
+*.synctex.gz
+*.toc
+
+# ========================
+# Misc Development
+# ========================
+
+# Node modules (if using any JS tools)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Docker
+.dockerignore
+
+# Terraform
+*.tfstate
+*.tfstate.*
+.terraform/
+
+# Local development tools
+.local
+.cache 

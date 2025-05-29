@@ -1,0 +1,16 @@
+column_policy: Maintain high data quality. Prefer complete, accurate information.
+  Avoid duplicates. Keep only business-relevant fields that support customer relationship
+  management.
+enrichment_columns:
+  company_name: Customer's organization name for B2B relationship management and account
+    planning.
+  email: Primary email address for customer contact. Must be unique and valid. This
+    is the primary identifier for customer records.
+  full_name: Complete customer name for personalized communication and formal correspondence.
+  notes: Relationship notes, preferences, and important context for customer interactions.
+    Keep concise but informative.
+  phone: Primary phone number for urgent communication. Should be formatted consistently.
+purpose: "Customer master database. Contains qualified customers with complete contact\
+  \ information\n        and relationship history. This is the authoritative source\
+  \ for customer data and should maintain\n        high data quality standards. Used\
+  \ for sales outreach, customer support, and relationship management."

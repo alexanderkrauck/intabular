@@ -1,0 +1,20 @@
+column_policy: "I want to keep custom fields, but only if they really support the purpose."
+
+enrichment_columns:
+  email: "Primary email address used for contacting the customer. We only want one email address per customer. Keep the more important one."
+  full_name: "Full name of the customer"
+  company_name: "Full name of the company the customer works for"
+  deal_stage: "Stage of the deal described in a single sentence"
+  deal_value: "Value of the deal in a single sentence"
+  phone: "Primary phone number used for contacting the customer. There must only be one phone number per customer."
+  location: "Location of the customer in a sentence"
+  notes: "Notes about the customer. Keep it short and concise."
+  enrichment_platforms: "Platforms used to enrich the customer data. It should be a dictionary with the platform name, date of enrichment, URL of the enrichment, and the full data that was obtained there in raw. This should not be parsed by the AI, but rather stored as is."
+
+purpose: >
+  Customer relationship data. Contains qualified customers, their contact information,
+  and active deal pipeline. This is the authoritative source for customer data and should
+  be prioritized in merges. The goal is to have all information required in order to contact
+  the customer per email or per phone. All information relevant for this can be stored here.
+  
+target: "customer_table.csv"

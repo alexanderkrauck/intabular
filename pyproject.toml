@@ -1,0 +1,71 @@
+[build-system]
+requires = ["setuptools>=45", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "intabular"
+version = "0.1.0"
+description = "Intelligent Table Data Ingestion - AI-powered CSV mapping and schema alignment"
+readme = "README.md"
+license = "MIT"
+authors = [
+    {name = "Alexander Krauck", email = "your-email@example.com"}
+]
+maintainers = [
+    {name = "Alexander Krauck", email = "your-email@example.com"}
+]
+keywords = ["csv", "data-ingestion", "ai", "llm", "data-mapping", "schema-alignment", "pandas"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers", 
+    "Intended Audience :: Science/Research",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9", 
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Scientific/Engineering :: Information Analysis",
+    "Topic :: Office/Business :: Financial :: Spreadsheet",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+requires-python = ">=3.8"
+dependencies = [
+    "openai>=1.0.0",
+    "pandas>=2.0.0",
+    "numpy>=1.20.0", 
+    "python-dotenv>=1.0.0",
+    "PyYAML>=6.0.0"
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "black>=22.0",
+    "flake8>=4.0",
+    "mypy>=0.910"
+]
+
+[project.urls]
+Homepage = "https://github.com/yourusername/intabular"
+Documentation = "https://github.com/yourusername/intabular#readme"
+Repository = "https://github.com/yourusername/intabular.git"
+"Bug Tracker" = "https://github.com/yourusername/intabular/issues"
+
+[project.scripts]
+intabular = "intabular.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["intabular*"]
+
+[tool.black]
+line-length = 100
+target-version = ['py38']
+
+[tool.mypy]
+python_version = "3.8"
+warn_return_any = true
+warn_unused_configs = true 

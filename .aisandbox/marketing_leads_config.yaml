@@ -1,0 +1,10 @@
+column_policy: balanced
+enrichment_columns:
+- contact_email
+- lead_source
+- interest_level
+- marketing_notes
+merge_priority: 1
+purpose: Marketing lead generation database. Contains prospects from various marketing
+  channels that need qualification and nurturing. Should enrich customer records with
+  marketing context and lead sources.

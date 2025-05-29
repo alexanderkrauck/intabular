@@ -1,0 +1,11 @@
+column_policy: comprehensive
+enrichment_columns:
+- email_addr
+- full_name
+- company_name
+- deal_stage
+- deal_value
+merge_priority: 3
+purpose: Customer relationship management system. Contains qualified customers, their
+  contact information, and active deal pipeline. This is the authoritative source
+  for customer data and should be prioritized in merges.

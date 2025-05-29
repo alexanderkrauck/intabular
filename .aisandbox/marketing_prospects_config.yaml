@@ -1,0 +1,9 @@
+column_policy: Keep marketing context and engagement data to inform sales approach.
+enrichment_columns:
+  campaign_source: Marketing channel that generated this lead
+  contact_email: Email address from marketing campaigns
+  interest_score: Numerical score indicating engagement level
+  marketing_notes: Campaign interaction and engagement details
+merge_priority: 1
+purpose: Marketing lead generation and qualification database. Contains prospects
+  from various marketing channels with engagement tracking and lead scoring.
