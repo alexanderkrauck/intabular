@@ -3,9 +3,11 @@ Ingestion strategy creation for mapping unknown CSV to target schema.
 """
 
 import json
+import time
 from typing import Dict, Any, List, Tuple
 from openai import OpenAI
 from .config import TableConfig
+from .logging_config import get_logger, log_prompt_response, log_strategy_creation
 from concurrent.futures import ThreadPoolExecutor
 import threading
 
@@ -16,20 +18,23 @@ class IngestionStrategy:
     def __init__(self, openai_client: OpenAI):
         self.client = openai_client
         self.max_parallel_calls = 4  # Limit parallel API calls for strategy creation
+        self.logger = get_logger('strategy')
     
     def create_ingestion_strategy(self, target_config: TableConfig, unknown_analysis: Dict) -> Dict[str, Any]:
         """Create strategy to ingest unknown CSV into target table structure"""
         
-        print(f"🧠 Creating field-by-field ingestion strategy...")
+        self.logger.info("🧠 Creating field-by-field ingestion strategy...")
         
         # Build target context
         target_context = self._build_target_context(target_config)
+        self.logger.debug("Built target context", extra={'target_context': target_context})
         
         # Get all target columns that need mapping
         target_columns = self._get_target_columns(target_config)
         source_columns = unknown_analysis.get('column_semantics', {})
         
-        print(f"   📋 Analyzing {len(target_columns)} target fields...")
+        self.logger.info(f"📋 Analyzing {len(target_columns)} target fields...", 
+                        extra={'target_columns': target_columns, 'source_column_count': len(source_columns)})
         
         # Create individual field mapping strategies in parallel
         field_strategies = self._create_field_mappings_parallel(
@@ -37,7 +42,7 @@ class IngestionStrategy:
         )
         
         # Create overall ingestion plan
-        print(f"   🗺️ Creating overall ingestion plan...")
+        self.logger.info("🗺️ Creating overall ingestion plan...")
         ingestion_plan = self._create_ingestion_plan(
             target_config, unknown_analysis, field_strategies
         )
@@ -79,6 +84,9 @@ class IngestionStrategy:
         for i in range(0, len(target_columns), batch_size):
             batch = target_columns[i:i + batch_size]
             
+            self.logger.debug(f"Processing batch {i//batch_size + 1} with {len(batch)} columns",
+                            extra={'batch_columns': batch})
+            
             with ThreadPoolExecutor(max_workers=min(len(batch), self.max_parallel_calls)) as executor:
                 futures = {
                     executor.submit(
@@ -98,9 +106,16 @@ class IngestionStrategy:
                         field_strategies[target_col] = result
                         strategy_type = result.get('strategy', 'unknown')
                         confidence = result.get('confidence', 0)
-                        print(f"      ✅ {target_col}: {strategy_type} (confidence: {confidence:.2f})")
+                        
+                        self.logger.info(f"✅ {target_col}: {strategy_type} (confidence: {confidence:.2f})")
+                        log_strategy_creation(
+                            self.logger, target_col, strategy_type, confidence,
+                            result.get('source_mapping', [])
+                        )
+                        
                     except Exception as e:
-                        print(f"      ❌ {target_col}: Strategy creation failed - {e}")
+                        self.logger.error(f"❌ {target_col}: Strategy creation failed - {e}",
+                                        extra={'target_column': target_col, 'error': str(e)})
                         field_strategies[target_col] = self._get_fallback_field_strategy(target_col)
         
         return field_strategies
@@ -110,6 +125,9 @@ class IngestionStrategy:
                                    target_context: str,
                                    unknown_analysis: Dict) -> Dict[str, Any]:
         """Create mapping strategy for a single target field with schema-forced response"""
+        
+        self.logger.debug(f"Creating mapping strategy for {target_column}",
+                         extra={'target_column': target_column})
         
         # Define response schema for field mapping
         response_schema = {
@@ -150,7 +168,7 @@ class IngestionStrategy:
         relevant_sources = self._find_relevant_source_columns(target_column, source_columns)
         
         prompt = f"""
-        Create a mapping strategy for this single target field by analyzing available source columns:
+        Create a mapping strategy for this target field by analyzing available source columns:
         
         TARGET FIELD: {target_column}
         Target Context: {target_context}
@@ -162,18 +180,64 @@ class IngestionStrategy:
         Purpose: {unknown_analysis.get('table_purpose', 'unknown')}
         Data Source: {unknown_analysis.get('data_source', 'unknown')}
         
-        Strategy Options:
-        - "replace": Use source column to completely replace target
-        - "prompt_merge": Use LLM to intelligently combine data
-        - "concat": Concatenate multiple sources with separator
-        - "derive": Create value by combining/transforming sources
-        - "preserve": Keep existing target data, ignore sources
-        - "transform": Apply specific transformation to source data
+        STRATEGY OPTIONS - Choose the most appropriate one:
+        
+        1. "replace": Direct Column Replacement
+           - Use when source has a direct equivalent to target field
+           - Source column contains the exact same type of data as target
+           - Example: source "email" → target "email_address"
+           - High confidence when semantic types match exactly
+           - No transformation needed, just copy values
+        
+        2. "prompt_merge": LLM-Powered Intelligent Merging
+           - Use when combining complex data requires human-like reasoning
+           - Multiple sources need intelligent synthesis
+           - Example: merge "first_name" + "last_name" + "title" → "full_contact_name"
+           - When business rules are complex and context-dependent
+           - Creates rich, meaningful combined data
+        
+        3. "concat": Simple Concatenation with Separator
+           - Use for straightforward text joining with delimiters
+           - Multiple source fields that should be joined as-is
+           - Example: "city" + ", " + "state" → "location"
+           - No intelligence needed, just string combination
+           - Fast and predictable results
+        
+        4. "derive": Rule-Based Transformation and Derivation
+           - Use when you can create new data through logical rules
+           - Apply deterministic transformations or calculations
+           - Example: "purchase_date" → "customer_lifetime_days" (calculated)
+           - Extract parts of data (domain from email, area code from phone)
+           - Use existing data to infer new valuable information
+        
+        5. "preserve": Keep Existing Target Data Unchanged
+           - Use when no suitable source mapping exists
+           - Target field is more valuable/accurate than any source
+           - Source data would degrade target data quality
+           - Strategic decision to maintain current data integrity
+           - No risk of data corruption from poor source data
+        
+        6. "transform": Apply Specific Data Transformation
+           - Use when source data needs format/structure changes
+           - Data exists but in wrong format (phone numbers, dates, names)
+           - Example: "JOHN DOE" → "John Doe" (case standardization)
+           - Clean and standardize data during ingestion
+           - Fix known data quality issues
+        
+        DECISION FRAMEWORK:
+        - Prioritize data quality and business value
+        - Consider computational cost (LLM calls are expensive)
+        - Assess confidence in semantic similarity
+        - Evaluate risk of data corruption vs improvement
+        - Choose "preserve" if uncertain about source data value
         
         Focus on finding the best single mapping for this target field.
-        Consider data quality, semantic similarity, and business value.
-        If no good source mapping exists, choose "preserve" strategy.
         """
+        
+        start_time = time.time()
+        
+        self.logger.debug(f"Sending strategy creation prompt for {target_column}",
+                         extra={'target_column': target_column, 'prompt_length': len(prompt)})
         
         response = self.client.chat.completions.create(
             model="gpt-4o-mini",
@@ -188,7 +252,16 @@ class IngestionStrategy:
             temperature=0.1
         )
         
-        return json.loads(response.choices[0].message.content)
+        duration = time.time() - start_time
+        response_content = response.choices[0].message.content
+        
+        # Log the prompt and response
+        log_prompt_response(
+            self.logger, prompt, response_content, 
+            model="gpt-4o-mini", duration=duration
+        )
+        
+        return json.loads(response_content)
     
     def _find_relevant_source_columns(self, target_column: str, 
                                     source_columns: Dict[str, Any]) -> Dict[str, Any]:
@@ -196,12 +269,19 @@ class IngestionStrategy:
         
         # Return top 5 most relevant source columns based on semantic similarity
         # For now, return all source columns but this could be optimized
-        return {col: data for col, data in list(source_columns.items())[:5]}
+        relevant = {col: data for col, data in list(source_columns.items())[:5]}
+        
+        self.logger.debug(f"Found {len(relevant)} relevant source columns for {target_column}",
+                         extra={'target_column': target_column, 'relevant_sources': list(relevant.keys())})
+        
+        return relevant
     
     def _create_ingestion_plan(self, target_config: TableConfig, 
                              unknown_analysis: Dict,
                              field_strategies: Dict[str, Any]) -> Dict[str, Any]:
         """Create overall ingestion plan with schema-forced response"""
+        
+        self.logger.debug("Creating overall ingestion plan")
         
         # Define response schema for ingestion plan
         response_schema = {
@@ -317,6 +397,14 @@ class IngestionStrategy:
         llm_fields = sum(1 for s in strategy_types if s in ['prompt_merge', 'derive'])
         complex_transforms = sum(1 for s in strategy_types if s == 'transform')
         
+        self.logger.debug("Strategy statistics calculated",
+                         extra={
+                             'total_fields': len(field_strategies),
+                             'llm_fields': llm_fields,
+                             'complex_transforms': complex_transforms,
+                             'strategy_distribution': dict([(s, strategy_types.count(s)) for s in set(strategy_types)])
+                         })
+        
         prompt = f"""
         Create an overall ingestion plan based on individual field mapping strategies:
         
@@ -339,6 +427,8 @@ class IngestionStrategy:
         Base recommendations on the specific field strategies already determined.
         """
         
+        start_time = time.time()
+        
         response = self.client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[{"role": "user", "content": prompt}],
@@ -352,7 +442,16 @@ class IngestionStrategy:
             temperature=0.1
         )
         
-        return json.loads(response.choices[0].message.content)
+        duration = time.time() - start_time
+        response_content = response.choices[0].message.content
+        
+        # Log the prompt and response
+        log_prompt_response(
+            self.logger, prompt, response_content,
+            model="gpt-4o-mini", duration=duration
+        )
+        
+        return json.loads(response_content)
     
     def _identify_unmapped_columns(self, source_columns: Dict[str, Any], 
                                  field_strategies: Dict[str, Any]) -> Dict[str, Any]:
@@ -372,6 +471,10 @@ class IngestionStrategy:
                     "potential_use": self._suggest_potential_use(col_data),
                     "action": "ignore"  # Default action
                 }
+        
+        self.logger.info(f"Identified {len(unmapped)} unmapped source columns",
+                        extra={'unmapped_columns': list(unmapped.keys()),
+                               'mapped_columns': list(mapped_sources)})
         
         return unmapped
     
@@ -420,7 +523,7 @@ class IngestionStrategy:
     def _log_strategy_results(self, strategy: Dict[str, Any]):
         """Log strategy creation results"""
         if 'field_strategies' in strategy:
-            print(f"   📋 Field mapping strategies:")
+            self.logger.info("📋 Field mapping strategies:")
             strategy_counts = {}
             total_confidence = 0
             for target_col, field_strategy in strategy['field_strategies'].items():
@@ -430,19 +533,20 @@ class IngestionStrategy:
                 total_confidence += confidence
             
             avg_confidence = total_confidence / len(strategy['field_strategies']) if strategy['field_strategies'] else 0
-            print(f"      📊 Strategy distribution: {dict(strategy_counts)}")
-            print(f"      🎯 Average field confidence: {avg_confidence:.2f}")
+            self.logger.info(f"📊 Strategy distribution: {dict(strategy_counts)}")
+            self.logger.info(f"🎯 Average field confidence: {avg_confidence:.2f}")
         
         if 'unmapped_source_columns' in strategy:
             unmapped_count = len(strategy['unmapped_source_columns'])
             if unmapped_count > 0:
-                print(f"   ⚠️  {unmapped_count} source columns will not be mapped")
+                self.logger.warning(f"⚠️  {unmapped_count} source columns will not be mapped")
         
         overall_confidence = strategy.get('confidence_score', 0)
-        print(f"   🎯 Overall strategy confidence: {overall_confidence:.2f}")
+        self.logger.info(f"🎯 Overall strategy confidence: {overall_confidence:.2f}")
         
         if 'execution_summary' in strategy:
             summary = strategy['execution_summary']
-            print(f"   ⚡ Execution plan: {summary.get('total_fields_mapped', 0)} fields, "
-                  f"{summary.get('fields_requiring_llm', 0)} LLM calls, "
-                  f"{summary.get('estimated_processing_time', 'unknown')} speed") 
+            self.logger.info(f"⚡ Execution plan: {summary.get('total_fields_mapped', 0)} fields, "
+                           f"{summary.get('fields_requiring_llm', 0)} LLM calls, "
+                           f"{summary.get('estimated_processing_time', 'unknown')} speed",
+                           extra={'execution_summary': summary}) 

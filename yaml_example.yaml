@@ -1,15 +1,33 @@
 column_policy: "I want to keep custom fields, but only if they really support the purpose."
 
 enrichment_columns:
-  email: "Primary email address used for contacting the customer. We only want one email address per customer. Keep the more important one."
-  full_name: "Full name of the customer"
-  company_name: "Full name of the company the customer works for"
-  deal_stage: "Stage of the deal described in a single sentence"
-  deal_value: "Value of the deal in a single sentence"
-  phone: "Primary phone number used for contacting the customer. There must only be one phone number per customer."
-  location: "Location of the customer in a sentence"
-  notes: "Notes about the customer. Keep it short and concise."
-  enrichment_platforms: "Platforms used to enrich the customer data. It should be a dictionary with the platform name, date of enrichment, URL of the enrichment, and the full data that was obtained there in raw. This should not be parsed by the AI, but rather stored as is."
+  email:
+    description: "Primary email address used for contacting the customer. We only want one email address per customer. Keep the more important one."
+    match_type: "perfect"
+  full_name:
+    description: "Full name of the customer"
+    match_type: "partial_perfect"
+  company_name:
+    description: "Full name of the company the customer works for"
+    match_type: "partial_perfect"
+  deal_stage:
+    description: "Stage of the deal described in a single sentence"
+    match_type: "semantic"
+  deal_value:
+    description: "Value of the deal in a single sentence"
+    match_type: "semantic"
+  phone:
+    description: "Primary phone number used for contacting the customer. There must only be one phone number per customer."
+    match_type: "partial_perfect"
+  location:
+    description: "Location of the customer in a sentence"
+    match_type: "semantic"
+  notes:
+    description: "Notes about the customer. Keep it short and concise."
+    match_type: "semantic"
+  enrichment_platforms:
+    description: "Platforms used to enrich the customer data. It should be a dictionary with the platform name, date of enrichment, URL of the enrichment, and the full data that was obtained there in raw. This should not be parsed by the AI, but rather stored as is."
+    match_type: "perfect"
 
 purpose: >
   Customer relationship data. Contains qualified customers, their contact information,
