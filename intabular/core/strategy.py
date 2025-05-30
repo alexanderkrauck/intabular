@@ -104,13 +104,24 @@ class IngestionStrategy:
                     try:
                         result = future.result(timeout=30)
                         field_strategies[target_col] = result
-                        strategy_type = result.get('strategy', 'unknown')
-                        confidence = result.get('confidence', 0)
                         
-                        self.logger.info(f"✅ {target_col}: {strategy_type} (confidence: {confidence:.2f})")
+                        # Extract strategy info from dual structure
+                        strategy_exists = result.get('strategy_if_exists', {}).get('strategy', 'unknown')
+                        strategy_empty = result.get('strategy_if_empty', {}).get('strategy', 'unknown')
+                        overall_confidence = result.get('overall_confidence', 0)
+                        complexity = result.get('complexity_assessment', 'unknown')
+                        
+                        self.logger.info(f"✅ {target_col}: exists={strategy_exists}, empty={strategy_empty} "
+                                        f"(confidence: {overall_confidence:.2f}, complexity: {complexity})")
+                        
+                        # Log strategy creation with dual info
+                        source_mapping_exists = result.get('strategy_if_exists', {}).get('source_mapping', [])
+                        source_mapping_empty = result.get('strategy_if_empty', {}).get('source_mapping', [])
+                        all_sources = list(set(source_mapping_exists + source_mapping_empty))
+                        
                         log_strategy_creation(
-                            self.logger, target_col, strategy_type, confidence,
-                            result.get('source_mapping', [])
+                            self.logger, target_col, f"{strategy_exists}/{strategy_empty}", 
+                            overall_confidence, all_sources
                         )
                         
                     except Exception as e:
@@ -124,43 +135,116 @@ class IngestionStrategy:
                                    source_columns: Dict[str, Any],
                                    target_context: str,
                                    unknown_analysis: Dict) -> Dict[str, Any]:
-        """Create mapping strategy for a single target field with schema-forced response"""
+        """Create mapping strategy for a single target field with dual scenarios for existing vs empty data.
+        
+        Args:
+            target_column (str): Target table column name to map to.
+                
+            source_columns (Dict[str, Any]): Source column analysis data.
+                Structure: {column_name: {semantic_type, business_value, data_quality, 
+                sample_values, null_percentage, unique_percentage, pattern_analysis}}
+                
+            target_context (str): Target table schema description including purpose, 
+                column policy, and target column specifications.
+                
+            unknown_analysis (Dict): Source CSV analysis containing table_purpose, 
+                data_source, quality_assessment, column_semantics, row_count, confidence_score.
+                
+        Returns:
+            Dict[str, Any]: Dual mapping strategy with structure:
+            {
+                strategy_if_exists: {strategy, source_mapping, confidence, reasoning, 
+                                   transformation_rule, prompt_template, fallback_strategy},
+                strategy_if_empty: {same fields as strategy_if_exists},
+                overall_confidence: float,
+                complexity_assessment: str
+            }
+            
+        Strategy types: "replace", "prompt_merge", "concat", "derive", "preserve"
+        """
         
         self.logger.debug(f"Creating mapping strategy for {target_column}",
                          extra={'target_column': target_column})
         
-        # Define response schema for field mapping
+        # Define response schema for field mapping with dual scenarios
         response_schema = {
             "type": "object",
             "properties": {
-                "strategy": {
-                    "type": "string",
-                    "enum": ["replace", "prompt_merge", "concat", "derive", "preserve", "transform"]
+                "strategy_if_exists": {
+                    "type": "object",
+                    "properties": {
+                        "strategy": {
+                            "type": "string",
+                            "enum": ["replace", "prompt_merge", "concat", "derive", "preserve"]
+                        },
+                        "source_mapping": {
+                            "type": "array",
+                            "items": {"type": "string"}
+                        },
+                        "confidence": {
+                            "type": "number",
+                            "minimum": 0,
+                            "maximum": 1
+                        },
+                        "reasoning": {
+                            "type": "string"
+                        },
+                        "transformation_rule": {
+                            "type": "string"
+                        },
+                        "prompt_template": {
+                            "type": "string"
+                        },
+                        "fallback_strategy": {
+                            "type": "string",
+                            "enum": ["preserve", "empty", "default_value"]
+                        }
+                    },
+                    "required": ["strategy", "source_mapping", "confidence", "reasoning", "transformation_rule", "prompt_template", "fallback_strategy"]
                 },
-                "source_mapping": {
-                    "type": "array",
-                    "items": {"type": "string"}
+                "strategy_if_empty": {
+                    "type": "object",
+                    "properties": {
+                        "strategy": {
+                            "type": "string",
+                            "enum": ["replace", "prompt_merge", "concat", "derive", "preserve"]
+                        },
+                        "source_mapping": {
+                            "type": "array",
+                            "items": {"type": "string"}
+                        },
+                        "confidence": {
+                            "type": "number",
+                            "minimum": 0,
+                            "maximum": 1
+                        },
+                        "reasoning": {
+                            "type": "string"
+                        },
+                        "transformation_rule": {
+                            "type": "string"
+                        },
+                        "prompt_template": {
+                            "type": "string"
+                        },
+                        "fallback_strategy": {
+                            "type": "string",
+                            "enum": ["preserve", "empty", "default_value"]
+                        }
+                    },
+                    "required": ["strategy", "source_mapping", "confidence", "reasoning", "transformation_rule", "prompt_template", "fallback_strategy"]
                 },
-                "confidence": {
+                "overall_confidence": {
                     "type": "number",
                     "minimum": 0,
                     "maximum": 1
                 },
-                "reasoning": {
-                    "type": "string"
-                },
-                "transformation_rule": {
-                    "type": "string"
-                },
-                "prompt_template": {
-                    "type": "string"
-                },
-                "fallback_strategy": {
+                "complexity_assessment": {
                     "type": "string",
-                    "enum": ["preserve", "empty", "default_value"]
+                    "enum": ["simple", "moderate", "complex"]
                 }
             },
-            "required": ["strategy", "source_mapping", "confidence", "reasoning", "transformation_rule", "prompt_template", "fallback_strategy"],
+            "required": ["strategy_if_exists", "strategy_if_empty", "overall_confidence", "complexity_assessment"],
             "additionalProperties": False
         }
         
@@ -168,7 +252,8 @@ class IngestionStrategy:
         relevant_sources = self._find_relevant_source_columns(target_column, source_columns)
         
         prompt = f"""
-        Create a mapping strategy for this target field by analyzing available source columns:
+        Create a dual mapping strategy for this target field by analyzing available source columns.
+        You must provide TWO strategies: one for when the target field already has data, and one for when it's empty.
         
         TARGET FIELD: {target_column}
         Target Context: {target_context}
@@ -180,7 +265,7 @@ class IngestionStrategy:
         Purpose: {unknown_analysis.get('table_purpose', 'unknown')}
         Data Source: {unknown_analysis.get('data_source', 'unknown')}
         
-        STRATEGY OPTIONS - Choose the most appropriate one:
+        STRATEGY OPTIONS - Choose the most appropriate for each scenario:
         
         1. "replace": Direct Column Replacement
            - Use when source has a direct equivalent to target field
@@ -188,55 +273,78 @@ class IngestionStrategy:
            - Example: source "email" → target "email_address"
            - High confidence when semantic types match exactly
            - No transformation needed, just copy values
+           - For existing data: overwrites current value completely
+           - For empty data: fills with source value
         
         2. "prompt_merge": LLM-Powered Intelligent Merging
            - Use when combining complex data requires human-like reasoning
-           - Multiple sources need intelligent synthesis
-           - Example: merge "first_name" + "last_name" + "title" → "full_contact_name"
+           - Multiple sources need intelligent synthesis with existing data
+           - Example: merge existing "notes" + "othernotes" + "comments" → enhanced "notes"
            - When business rules are complex and context-dependent
+           - For existing data: intelligently combines old and new information
+           - For empty data: creates new content from source fields
            - Creates rich, meaningful combined data
         
         3. "concat": Simple Concatenation with Separator
            - Use for straightforward text joining with delimiters
-           - Multiple source fields that should be joined as-is
-           - Example: "city" + ", " + "state" → "location"
+           - Multiple source fields that should be joined
+           - Example: existing "location" + " | " + "additional_location" → "location"
            - No intelligence needed, just string combination
+           - For existing data: appends new data with separator
+           - For empty data: joins source fields directly
            - Fast and predictable results
         
-        4. "derive": Rule-Based Transformation and Derivation
-           - Use when you can create new data through logical rules
-           - Apply deterministic transformations or calculations
-           - Example: "purchase_date" → "customer_lifetime_days" (calculated)
-           - Extract parts of data (domain from email, area code from phone)
-           - Use existing data to infer new valuable information
+        4. "derive": String Format Rule-Based Derivation
+           - Use when you can create new data through deterministic string formatting
+           - Apply format templates that can be called with string.format()
+           - MUST provide a format string usable with Python's string.format() method
+           - Available variables: {{existing_value}}, {{source_field1}}, {{source_field2}}, etc.
+           - Example: "{{existing_value}} | Updated: {{new_notes}}" or "{{first_name}} {{last_name}}"
+           - Example: "Customer since {{purchase_date}} ({{days_active}} days)" 
+           - For existing data: format string includes {{existing_value}}
+           - For empty data: format string uses only source fields
+           - Deterministic and fast execution
         
         5. "preserve": Keep Existing Target Data Unchanged
            - Use when no suitable source mapping exists
            - Target field is more valuable/accurate than any source
            - Source data would degrade target data quality
+           - For existing data: always preserve current value
+           - For empty data: leave empty (no source data used)
            - Strategic decision to maintain current data integrity
-           - No risk of data corruption from poor source data
         
-        6. "transform": Apply Specific Data Transformation
-           - Use when source data needs format/structure changes
-           - Data exists but in wrong format (phone numbers, dates, names)
-           - Example: "JOHN DOE" → "John Doe" (case standardization)
-           - Clean and standardize data during ingestion
-           - Fix known data quality issues
+        DUAL SCENARIO REQUIREMENTS:
         
-        DECISION FRAMEWORK:
-        - Prioritize data quality and business value
-        - Consider computational cost (LLM calls are expensive)
-        - Assess confidence in semantic similarity
-        - Evaluate risk of data corruption vs improvement
-        - Choose "preserve" if uncertain about source data value
+        STRATEGY_IF_EXISTS: When target field already contains data
+        - Consider how to handle conflicts between existing and new data
+        - Decide whether to merge, replace, or preserve existing information
+        - Balance data preservation with enhancement opportunities
+        - Example: existing "notes: Meeting scheduled" + source "comments: Client interested in upgrade"
         
-        Focus on finding the best single mapping for this target field.
+        STRATEGY_IF_EMPTY: When target field is null/empty/NaN
+        - Focus on populating empty field with best available source data
+        - No conflict resolution needed, just optimal data selection
+        - Can be more aggressive since no existing data is at risk
+        - Example: empty "notes" + source "comments: Initial contact made"
+        
+        DERIVE FORMAT STRING REQUIREMENTS:
+        - Must be valid Python string.format() template
+        - Use {{variable_name}} syntax for placeholders
+        - For existing data scenarios: include {{existing_value}} if needed
+        - For source fields: use exact source column names as variables
+        - Example valid formats:
+          * "{{existing_value}} | {{new_field}}"
+          * "{{first_name}} {{last_name}}"
+          * "Updated: {{existing_value}} with {{source_notes}}"
+          * "{{company_name}} - {{contact_type}}"
+        
+        Focus on creating the best dual strategy for this specific target field.
+        Consider the business value and data quality implications of each approach.
         """
         
         start_time = time.time()
         
-        self.logger.debug(f"Sending strategy creation prompt for {target_column}",
+        self.logger.debug(f"Sending dual strategy creation prompt for {target_column}",
                          extra={'target_column': target_column, 'prompt_length': len(prompt)})
         
         response = self.client.chat.completions.create(
@@ -245,7 +353,7 @@ class IngestionStrategy:
             response_format={
                 "type": "json_schema",
                 "json_schema": {
-                    "name": "field_mapping",
+                    "name": "dual_field_mapping",
                     "schema": response_schema
                 }
             },
@@ -393,16 +501,27 @@ class IngestionStrategy:
         }
         
         # Calculate summary statistics
-        strategy_types = [fs.get('strategy', 'unknown') for fs in field_strategies.values()]
-        llm_fields = sum(1 for s in strategy_types if s in ['prompt_merge', 'derive'])
-        complex_transforms = sum(1 for s in strategy_types if s == 'transform')
+        strategy_types_exists = []
+        strategy_types_empty = []
+        for field_strategy in field_strategies.values():
+            strategy_types_exists.append(field_strategy.get('strategy_if_exists', {}).get('strategy', 'unknown'))
+            strategy_types_empty.append(field_strategy.get('strategy_if_empty', {}).get('strategy', 'unknown'))
         
-        self.logger.debug("Strategy statistics calculated",
+        llm_fields_exists = sum(1 for s in strategy_types_exists if s in ['prompt_merge', 'derive'])
+        llm_fields_empty = sum(1 for s in strategy_types_empty if s in ['prompt_merge', 'derive'])
+        llm_fields = max(llm_fields_exists, llm_fields_empty)  # Worst case scenario
+        
+        complex_transforms_exists = sum(1 for s in strategy_types_exists if s == 'derive')
+        complex_transforms_empty = sum(1 for s in strategy_types_empty if s == 'derive')
+        complex_transforms = complex_transforms_exists + complex_transforms_empty
+        
+        self.logger.debug("Dual strategy statistics calculated",
                          extra={
                              'total_fields': len(field_strategies),
-                             'llm_fields': llm_fields,
-                             'complex_transforms': complex_transforms,
-                             'strategy_distribution': dict([(s, strategy_types.count(s)) for s in set(strategy_types)])
+                             'llm_fields_worst_case': llm_fields,
+                             'complex_transforms_total': complex_transforms,
+                             'strategy_distribution_exists': dict([(s, strategy_types_exists.count(s)) for s in set(strategy_types_exists)]),
+                             'strategy_distribution_empty': dict([(s, strategy_types_empty.count(s)) for s in set(strategy_types_empty)])
                          })
         
         prompt = f"""
@@ -418,7 +537,7 @@ class IngestionStrategy:
         
         FIELD STRATEGIES SUMMARY:
         Total Fields: {len(field_strategies)}
-        Strategy Distribution: {dict([(s, strategy_types.count(s)) for s in set(strategy_types)])}
+        Strategy Distribution: {dict([(s, strategy_types_exists.count(s)) for s in set(strategy_types_exists)])}
         LLM-dependent Fields: {llm_fields}
         Complex Transformations: {complex_transforms}
         
@@ -457,10 +576,12 @@ class IngestionStrategy:
                                  field_strategies: Dict[str, Any]) -> Dict[str, Any]:
         """Identify source columns that weren't mapped to any target field"""
         
-        # Get all source columns used in mappings
+        # Get all source columns used in mappings from both scenarios
         mapped_sources = set()
         for strategy in field_strategies.values():
-            mapped_sources.update(strategy.get('source_mapping', []))
+            # Add sources from both exists and empty scenarios
+            mapped_sources.update(strategy.get('strategy_if_exists', {}).get('source_mapping', []))
+            mapped_sources.update(strategy.get('strategy_if_empty', {}).get('source_mapping', []))
         
         # Find unmapped columns
         unmapped = {}
@@ -494,7 +615,7 @@ class IngestionStrategy:
     
     def _get_fallback_field_strategy(self, target_column: str) -> Dict[str, Any]:
         """Provide fallback strategy when API call fails"""
-        return {
+        fallback_strategy = {
             "strategy": "preserve",
             "source_mapping": [],
             "confidence": 0.1,
@@ -502,6 +623,13 @@ class IngestionStrategy:
             "transformation_rule": "",
             "prompt_template": "",
             "fallback_strategy": "preserve"
+        }
+        
+        return {
+            "strategy_if_exists": fallback_strategy.copy(),
+            "strategy_if_empty": fallback_strategy.copy(),
+            "overall_confidence": 0.1,
+            "complexity_assessment": "simple"
         }
     
     def _build_target_context(self, config: TableConfig) -> str:
@@ -524,16 +652,24 @@ class IngestionStrategy:
         """Log strategy creation results"""
         if 'field_strategies' in strategy:
             self.logger.info("📋 Field mapping strategies:")
-            strategy_counts = {}
+            strategy_counts_exists = {}
+            strategy_counts_empty = {}
             total_confidence = 0
-            for target_col, field_strategy in strategy['field_strategies'].items():
-                strategy_type = field_strategy.get('strategy', 'unknown')
-                confidence = field_strategy.get('confidence', 0)
-                strategy_counts[strategy_type] = strategy_counts.get(strategy_type, 0) + 1
-                total_confidence += confidence
+            field_count = 0
             
-            avg_confidence = total_confidence / len(strategy['field_strategies']) if strategy['field_strategies'] else 0
-            self.logger.info(f"📊 Strategy distribution: {dict(strategy_counts)}")
+            for target_col, field_strategy in strategy['field_strategies'].items():
+                strategy_exists = field_strategy.get('strategy_if_exists', {}).get('strategy', 'unknown')
+                strategy_empty = field_strategy.get('strategy_if_empty', {}).get('strategy', 'unknown')
+                confidence = field_strategy.get('overall_confidence', 0)
+                
+                strategy_counts_exists[strategy_exists] = strategy_counts_exists.get(strategy_exists, 0) + 1
+                strategy_counts_empty[strategy_empty] = strategy_counts_empty.get(strategy_empty, 0) + 1
+                total_confidence += confidence
+                field_count += 1
+            
+            avg_confidence = total_confidence / field_count if field_count > 0 else 0
+            self.logger.info(f"📊 Strategy distribution (if exists): {dict(strategy_counts_exists)}")
+            self.logger.info(f"📊 Strategy distribution (if empty): {dict(strategy_counts_empty)}")
             self.logger.info(f"🎯 Average field confidence: {avg_confidence:.2f}")
         
         if 'unmapped_source_columns' in strategy:

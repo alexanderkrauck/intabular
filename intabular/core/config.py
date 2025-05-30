@@ -121,7 +121,7 @@ class TableConfig:
             
             logger.info(f"✅ Configuration loaded successfully",
                        extra={
-                           'filename': filename,
+                           'config_file': filename,
                            'purpose': config.purpose,
                            'column_count': len(config.get_enrichment_column_names()),
                            'column_policy': config.column_policy.value

@@ -6,7 +6,7 @@ This demo shows how to use InTabular to automatically map unknown CSV structures
 to your well-defined schemas using AI.
 
 🎯 What we'll cover:
-1. Installation & Setup
+1. Installation & Setup with Logging
 2. Creating Target Schemas
 3. Analyzing Unknown CSVs  
 4. Intelligent Data Mapping
@@ -14,7 +14,7 @@ to your well-defined schemas using AI.
 """
 
 # %%
-# 1. Installation & Setup
+# Setup
 print("🚀 InTabular Demo")
 print("=" * 50)
 
@@ -25,16 +25,17 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 # Import InTabular
-from intabular import AdaptiveMerger, TableConfig
+from intabular import setup_logging, run_ingestion_pipeline
 
 print("✅ InTabular imported successfully!")
-print("📦 Ready for intelligent CSV data ingestion")
 load_dotenv()
+
+# Enable INFO logging
+setup_logging(level="INFO", console_output=True)
+
 # %%
-
-merger = AdaptiveMerger()
-#%%
-merger.ingest_csv("yaml_example.yaml", "apollo-contacts-export.csv")
-
+# Run ingestion with full logging
+result_df = run_ingestion_pipeline("yaml_example.yaml", "apollo-contacts-export.csv")
+print(f"✅ Processed {len(result_df)} rows")
 
 # %%
