@@ -6,12 +6,22 @@ import json
 import time
 import pandas as pd
 from pathlib import Path
-from typing import Dict, Any
+from typing import Dict, Any, List
 from openai import OpenAI
 
 from intabular.core.config import GatekeeperConfig
 from .logging_config import get_logger, log_prompt_response
 from .utils import parallel_map
+
+
+class DataframeAnalysis:
+    """Container for DataFrame analysis results"""
+    
+    def __init__(self, general_ingestion_analysis: Dict[str, Any], 
+                 dataframe_column_analysis: List[Dict[str, Any]]):
+        self.general_ingestion_analysis = general_ingestion_analysis
+        self.dataframe_column_analysis = dataframe_column_analysis
+
 
 
 class UnclearAssumptionsException(Exception):
@@ -35,8 +45,11 @@ class DataframeAnalyzer:
         self.sample_rows = gatekeeper_config.sample_rows  # Configurable number of rows to analyze
         self.logger = get_logger('analyzer')
     
-    def analyze_dataframe_structure(self, df: pd.DataFrame, additional_info: str = None) -> Dict[str, Any]:
-        """Simple analysis of DF structure focusing on column classification"""
+    def analyze_dataframe_structure(self, df: pd.DataFrame, additional_info: str = None) -> DataframeAnalysis:
+        """Simple analysis of DF structure focusing on column classification.
+        
+        This does inplace modifications to the dataframe.
+        """
         
         self.logger.info(f"📊 Starting simplified Dataframe analysis for DataFrame")
         
@@ -54,7 +67,7 @@ class DataframeAnalyzer:
         ].tolist()
         if empty_cols:
             self.logger.info(f"🗑️ Removing {len(empty_cols)} empty columns: {empty_cols}")
-            df = df.drop(columns=empty_cols)
+            df = df.drop(columns=empty_cols, inplace=True)
         
         # Analyze Dataframe structure and semantic purpose with LLM
         df_analysis = self._analyze_dataframe_with_llm(df, additional_info)
@@ -74,17 +87,27 @@ class DataframeAnalyzer:
         # Convert list results back to dict mapping column names to results
         column_semantics = dict(zip(df.columns, column_results))
         
-        # Combine structure analysis with semantic insights
-        analysis = {
+        # Create general ingestion analysis
+        general_analysis = {
             "row_count": len(df),
             "column_count": len(df.columns),
-            "column_names": list(df.columns),
-            "column_semantics": column_semantics,
-            # Add semantic analysis from LLM
-            "table_purpose": df_analysis['semantic_purpose'],
+            "table_purpose": df_analysis['semantic_purpose']
         }
         
-        return analysis
+        # Create column analysis list
+        column_analysis_list = [
+            {
+                "column_name": col_name,
+                **column_semantics[col_name]
+            }
+            for col_name in df.columns
+        ]
+        
+        # Create and return DataframeAnalysis object
+        return DataframeAnalysis(
+            general_ingestion_analysis=general_analysis,
+            dataframe_column_analysis=column_analysis_list
+        )
     
     def _validate_basic_structure(self, df: pd.DataFrame):
         """Validate basic pandas-level assumptions about the DF structure"""
