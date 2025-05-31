@@ -11,14 +11,16 @@ from .logging_config import get_logger
 class GatekeeperConfig:
     """Configuration for gatekeeper function g_w(A, D, I) → D' for csv/tables"""
     
-    def __init__(self, purpose: str, enrichment_columns: Union[List[str], Dict[str, str]], 
+    def __init__(self, purpose: str, enrichment_columns: Dict[str, Dict[str, str]], 
+                 additional_columns: Dict[str, Dict[str, str]] = None,
                  target_file_path: str = None, sample_rows: int = 5):
         """
         Initialize gatekeeper configuration
         
         Args:
             purpose: Business purpose/description of the table (the 'I' in g_w)
-            enrichment_columns: List of column names or dict of {column: description}
+            enrichment_columns: Dict of {column: {description, match_type}}
+            additional_columns: Dict of {column: {description, match_type}}
             target_file_path: Optional target file path
             sample_rows: Number of sample rows to analyze for column classification
         """
@@ -26,21 +28,45 @@ class GatekeeperConfig:
         
         self.purpose = purpose
         self.enrichment_columns = enrichment_columns
+        self.additional_columns = additional_columns or {}
         self.target_file_path = target_file_path
         self.sample_rows = sample_rows
         
-        self.logger.debug(f"Created GatekeeperConfig with {len(self.get_enrichment_column_names())} columns",
+        self.logger.debug(f"Created GatekeeperConfig with {len(self.enrichment_columns)} enrichment columns",
                          extra={
                              'purpose': purpose,
-                             'column_count': len(self.get_enrichment_column_names()),
+                             'enrichment_column_count': len(self.enrichment_columns),
+                             'additional_column_count': len(self.additional_columns),
                              'sample_rows': sample_rows
                          })
     
     def get_enrichment_column_names(self) -> List[str]:
         """Get list of enrichment column names"""
-        if isinstance(self.enrichment_columns, dict):
-            return list(self.enrichment_columns.keys())
-        return list(self.enrichment_columns)
+        return list(self.enrichment_columns.keys())
+    
+    def get_additional_column_names(self) -> List[str]:
+        """Get list of additional column names"""
+        return list(self.additional_columns.keys())
+    
+    def get_all_column_names(self) -> List[str]:
+        """Get list of all column names"""
+        return self.get_enrichment_column_names() + self.get_additional_column_names()
+    
+    def get_column_description(self, column_name: str) -> str:
+        """Get description for a specific column"""
+        if column_name in self.enrichment_columns:
+            return self.enrichment_columns[column_name].get('description', '')
+        elif column_name in self.additional_columns:
+            return self.additional_columns[column_name].get('description', '')
+        return ''
+    
+    def get_column_match_type(self, column_name: str) -> str:
+        """Get match_type for a specific column"""
+        if column_name in self.enrichment_columns:
+            return self.enrichment_columns[column_name].get('match_type', 'semantic')
+        elif column_name in self.additional_columns:
+            return self.additional_columns[column_name].get('match_type', 'semantic')
+        return 'semantic'
     
     def to_yaml(self, filename: str):
         """Save configuration to YAML file"""
@@ -53,6 +79,9 @@ class GatekeeperConfig:
             'sample_rows': self.sample_rows,
             'target_file_path': self.target_file_path
         }
+        
+        if self.additional_columns:
+            config_data['additional_columns'] = self.additional_columns
         
         try:
             with open(filename, 'w') as f:
@@ -87,6 +116,7 @@ class GatekeeperConfig:
             config = cls(
                 purpose=data['purpose'],
                 enrichment_columns=data['enrichment_columns'],
+                additional_columns=data.get('additional_columns'),
                 target_file_path=data.get('target_file_path'),
                 sample_rows=data.get('sample_rows', 5)  # Default to 5 if not specified
             )

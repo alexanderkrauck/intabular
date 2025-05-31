@@ -1,5 +1,3 @@
-column_policy: "I want to keep custom fields, but only if they really support the purpose."
-
 enrichment_columns:
   email:
     description: "Primary email address used for contacting the customer. We only want one email address per customer. Keep the more important one."
@@ -28,6 +26,7 @@ enrichment_columns:
   enrichment_platforms:
     description: "Platforms used to enrich the customer data. It should be a dictionary with the platform name, date of enrichment, URL of the enrichment, and the full data that was obtained there in raw. This should not be parsed by the AI, but rather stored as is."
     match_type: "perfect"
+
 
 purpose: >
   Customer relationship data. Contains qualified customers, their contact information,
