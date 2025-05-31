@@ -85,7 +85,8 @@ def run_ingestion_pipeline(yaml_config_file: str, csv_to_ingest: str) -> pd.Data
     df_to_ingest,
     df_to_enrich,
     strategy,
-    target_config
+    target_config,
+    df_analysis.general_ingestion_analysis
     )
     
     # Save results

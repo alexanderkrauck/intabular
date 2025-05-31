@@ -2,27 +2,260 @@
 Simple entity-focused CSV ingestion processor.
 """
 
+import json
+import re
+import ast
 import numpy as np
 import pandas as pd
-from typing import Dict, Any, List, Tuple, Optional
+from typing import Dict, Any, List, Tuple, Optional, Union
 from pathlib import Path
 from openai import OpenAI
 
 from intabular.core.config import GatekeeperConfig
-from intabular.core.strategy import DataframeIngestionStrategyResult
-from intabular.core.transformer import TransformationExecutor, apply_column_mapping
 from .logging_config import get_logger
+
+SAFE_NAMESPACE = {
+            're': re,
+            'str': str,
+            'int': int,
+            'float': float,
+            'len': len,
+            'min': min,
+            'max': max,
+            'abs': abs,
+            'round': round,
+            'bool': bool,
+            'list': list,
+            'dict': dict,
+            'set': set,
+            'tuple': tuple,
+        }
 
 
 class DataframeIngestionProcessor:
-    """Simple entity-focused ingestion processor"""
+    """Simple entity-focused ingestion processor with integrated transformation capabilities"""
     
     def __init__(self, openai_client: OpenAI):
         self.client = openai_client
         self.logger = get_logger('processor')
-        self.transformer = TransformationExecutor()
     
-    def execute_ingestion(self, source_df: pd.DataFrame, target_df: pd.DataFrame, strategy: DataframeIngestionStrategyResult, target_config: GatekeeperConfig) -> pd.DataFrame:
+    def execute_transformation(
+        self, 
+        transformation_rule: str, 
+        source_data: Dict[str, Any], 
+        current_value: Any = None
+    ) -> Any:
+        """
+        Execute a transformation rule with provided data
+        
+        Args:
+            transformation_rule: Python expression to execute
+            source_data: Dictionary of source column data
+            current_value: Current value in target column (optional)
+            
+        Returns:
+            Transformed value
+            
+        Raises:
+            ValueError: If transformation execution fails
+        """
+        
+        if not transformation_rule or transformation_rule.strip() == "":
+            return None
+            
+        # Create execution namespace
+        namespace = SAFE_NAMESPACE.copy()
+        
+        # Add source column data - convert to strings and handle None values
+        for col_name, value in source_data.items():
+            if value is None:
+                namespace[col_name] = ""
+            elif isinstance(value, str):
+                namespace[col_name] = value
+            else:
+                namespace[col_name] = str(value)
+        
+        # Add current target value
+        if current_value is None:
+            namespace['current'] = ""
+        elif isinstance(current_value, str):
+            namespace['current'] = current_value
+        else:
+            namespace['current'] = str(current_value)
+        
+        try:
+            self.logger.debug(f"Executing transformation: {transformation_rule}")
+            self.logger.debug(f"With data: {list(source_data.keys())}")
+            
+            # Execute the transformation rule
+            result = eval(transformation_rule, {"__builtins__": {}}, namespace)
+            
+            self.logger.debug(f"Transformation result: {result}")
+            return result
+            
+        except Exception as e:
+            error_msg = f"Failed to execute transformation '{transformation_rule}': {e}"
+            self.logger.error(error_msg)
+            raise ValueError(error_msg)
+    
+    def validate_transformation_rule(self, transformation_rule: str) -> bool:
+        """
+        Validate that a transformation rule is safe to execute
+        
+        Args:
+            transformation_rule: Python expression to validate
+            
+        Returns:
+            True if safe, False otherwise
+        """
+        
+        if not transformation_rule or transformation_rule.strip() == "":
+            return False
+            
+        try:
+            # Parse the expression into an AST
+            tree = ast.parse(transformation_rule, mode='eval')
+            
+            # Check for dangerous operations
+            for node in ast.walk(tree):
+                if isinstance(node, (ast.Import, ast.ImportFrom)):
+                    return False
+                if isinstance(node, ast.Call):
+                    # Check for dangerous function calls
+                    if isinstance(node.func, ast.Name):
+                        if node.func.id in ['exec', 'eval', 'compile', 'open', '__import__']:
+                            return False
+                    elif isinstance(node.func, ast.Attribute):
+                        # Check for dangerous method calls
+                        if node.func.attr in ['write', 'read', 'delete', 'remove']:
+                            return False
+                            
+            return True
+            
+        except SyntaxError:
+            return False
+        except Exception:
+            return False
+
+    def apply_column_mapping(
+        self, 
+        mapping_result: Dict[str, Any], 
+        source_row: Dict[str, Any], 
+        target_column_name: str,
+        target_config: GatekeeperConfig,
+        general_ingestion_analysis: Dict[str, Any],
+        current_value: Any = None
+    ) -> Any:
+        """
+        Apply a column mapping to transform source data
+        
+        Args:
+            mapping_result: Result from strategy creation with transformation_type and transformation_rule
+            source_row: Dictionary of source column data for this row
+            target_column_name: Name of the target column being filled
+            target_config: Configuration for the target dataset
+            general_ingestion_analysis: General analysis of the ingestion process
+            current_value: Current value in target column (for merging)
+            
+        Returns:
+            Transformed value or None if no mapping
+        """
+        
+        if mapping_result['transformation_type'] == 'none':
+            return None
+        elif mapping_result['transformation_type'] == 'format':
+            return self.execute_transformation(
+                mapping_result['transformation_rule'], 
+                source_row, 
+                current_value
+            )
+        elif mapping_result['transformation_type'] == 'llm_format':
+            # First apply the format transformation
+            intermediate_result = self.execute_transformation(
+                mapping_result['transformation_rule'], 
+                source_row, 
+                current_value
+            )
+            
+            # Now pass to LLM for further processing
+            return self._apply_llm_transformation(
+                intermediate_result,
+                target_column_name,
+                target_config,
+                general_ingestion_analysis,
+                source_row,
+                current_value
+            )
+        else:
+            raise ValueError(f"Unknown transformation type: {mapping_result['transformation_type']}")
+
+    def _apply_llm_transformation(
+        self,
+        intermediate_result: Any,
+        target_column_name: str,
+        target_config: GatekeeperConfig,
+        general_ingestion_analysis: Dict[str, Any],
+        source_row: Dict[str, Any],
+        current_value: Any = None
+    ) -> Any:
+        """
+        Apply LLM-based transformation for complex normalization decisions
+        
+        Args:
+            intermediate_result: Result from initial format transformation
+            target_column_name: Name of the target column being filled
+            target_config: Configuration for the target dataset
+            general_ingestion_analysis: General analysis of the ingestion process
+            source_row: Original source row data
+            current_value: Current value in target column (for merging)
+            
+        Returns:
+            LLM-processed transformation result
+        """
+        
+        try:
+            # Get target column information
+            column_info = target_config.get_interpretable_column_information(target_column_name)
+            
+            # Prepare prompt for LLM
+            prompt = f"""
+            We want to map a information from a source to a column in our target table. Transform and normalize the following value for a specific target column.
+            
+            GENERAL PURPOSE OF DATA: {target_config.purpose}
+            
+            TARGET COLUMN INFORMATION:
+            {column_info}
+            
+            GENERAL INGESTION ANALYSIS of the incoming table where this new information is from:
+            {json.dumps(general_ingestion_analysis, indent=2)}
+            
+            INTERMEDIATE TRANSFORMATION RESULT: {intermediate_result}
+            
+            CURRENT TARGET VALUE: {current_value if current_value else "None"}
+            
+            Please transform the intermediate result into a value that properly fits the target column requirements.
+            Consider the purpose of the data, the specific column requirements, and the overall ingestion context.
+            Return only the transformed value, nothing else.
+            """
+            
+            response = self.client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.1,
+                max_tokens=500
+            )
+            
+            result = response.choices[0].message.content.strip()
+            self.logger.debug(f"LLM transformation result for {target_column_name}: {result}")
+            return result
+            
+        except Exception as e:
+            error_msg = f"Failed LLM transformation for {target_column_name}: {e}"
+            self.logger.warning(error_msg)
+            # Fallback to intermediate result if LLM fails
+            return intermediate_result
+
+    def execute_ingestion(self, source_df: pd.DataFrame, target_df: pd.DataFrame, strategy, target_config: GatekeeperConfig, general_ingestion_analysis: Dict[str, Any]) -> pd.DataFrame:
         """Execute entity-focused ingestion with identity-based merging"""
         
         self.logger.info("🔀 Executing entity-focused ingestion...")
@@ -54,31 +287,31 @@ class DataframeIngestionProcessor:
             
             # Transform entity fields for matching
             #TODO: this should be map_parallel (ed) since it might include LLM calls
-            entity_values = self._transform_entity_fields(source_data, entity_mappings)
+            entity_values = self._transform_entity_fields(source_data, entity_mappings, target_config, general_ingestion_analysis)
             
             # Find best match based on entity values
             match_idx, identity_sum = self._find_best_match(entity_values, target_df, target_config)
             
             if match_idx is not None and identity_sum >= 1.0:
                 # Merge into existing row
-                target_df = self._merge_row(target_df, match_idx, source_data, entity_values, merge_mappings)
+                target_df = self._merge_row(target_df, match_idx, source_data, entity_values, merge_mappings, target_config, general_ingestion_analysis)
                 merged_count += 1
             else:
                 # Add as new row
-                target_df = self._add_row(target_df, source_data, entity_values, merge_mappings)
+                target_df = self._add_row(target_df, source_data, entity_values, merge_mappings, target_config, general_ingestion_analysis)
                 added_count += 1
         
         self.logger.info(f"✅ Complete: {merged_count} merged, {added_count} added, {len(target_df)} total rows")
         return target_df
     
-    def _transform_entity_fields(self, source_data: Dict[str, Any], entity_mappings: Dict[str, Dict[str, Any]]) -> Dict[str, str]:
+    def _transform_entity_fields(self, source_data: Dict[str, Any], entity_mappings: Dict[str, Dict[str, Any]], target_config: GatekeeperConfig, general_ingestion_analysis: Dict[str, Any]) -> Dict[str, str]:
         """Transform source data to entity field values using transformation rules"""
         entity_values = {}
         
         for target_col, mapping in entity_mappings.items():
             try:
-                # Apply transformation using the transformer
-                transformed_value = apply_column_mapping(mapping, source_data)
+                # Apply transformation using the integrated transformation functionality
+                transformed_value = self.apply_column_mapping(mapping, source_data, target_col, target_config, general_ingestion_analysis)
                 
                 if transformed_value is not None:
                     entity_values[target_col] = str(transformed_value).strip()
@@ -113,7 +346,7 @@ class DataframeIngestionProcessor:
     
     
     def _merge_row(self, target_df: pd.DataFrame, target_idx: int, source_data: Dict[str, Any],
-                  entity_values: Dict[str, str], merge_mappings: Dict[str, Dict[str, Any]]) -> pd.DataFrame:
+                  entity_values: Dict[str, str], merge_mappings: Dict[str, Dict[str, Any]], target_config: GatekeeperConfig, general_ingestion_analysis: Dict[str, Any]) -> pd.DataFrame:
         """Merge source row into existing target row"""
         
         # Update entity fields (only if target is empty, using precomputed values)
@@ -133,9 +366,9 @@ class DataframeIngestionProcessor:
             try:
                 if target_col in target_df.columns:
                     current_value = target_df.loc[target_idx, target_col]
-                    merged_value = apply_column_mapping(mapping, source_data, current_value)
+                    merged_value = self.apply_column_mapping(mapping, source_data, target_col, target_config, general_ingestion_analysis, current_value)
                 else:
-                    merged_value = apply_column_mapping(mapping, source_data)
+                    merged_value = self.apply_column_mapping(mapping, source_data, target_col, target_config, general_ingestion_analysis)
                     
                 if merged_value is not None:
                     target_df.loc[target_idx, target_col] = str(merged_value).strip()
@@ -146,7 +379,7 @@ class DataframeIngestionProcessor:
         return target_df
     
     def _add_row(self, target_df: pd.DataFrame, source_data: Dict[str, Any],
-                entity_values: Dict[str, str], merge_mappings: Dict[str, Dict[str, Any]]) -> pd.DataFrame:
+                entity_values: Dict[str, str], merge_mappings: Dict[str, Dict[str, Any]], target_config: GatekeeperConfig, general_ingestion_analysis: Dict[str, Any]) -> pd.DataFrame:
         """Add source row as new row to target"""
         new_row = {}
         
@@ -161,7 +394,7 @@ class DataframeIngestionProcessor:
                 continue
                 
             try:
-                new_value = apply_column_mapping(mapping, source_data)
+                new_value = self.apply_column_mapping(mapping, source_data, target_col, target_config, general_ingestion_analysis)
                 new_row[target_col] = str(new_value).strip() if new_value is not None else ""
             except Exception as e:
                 self.logger.warning(f"Failed to add descriptive field {target_col}: {e}")

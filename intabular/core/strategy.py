@@ -8,7 +8,7 @@ import re
 from typing import Dict, Any, List, Tuple, Optional
 from openai import OpenAI
 from intabular.core.analyzer import DataframeAnalysis
-from intabular.core.transformer import SAFE_NAMESPACE
+from intabular.core.processor import SAFE_NAMESPACE
 from .config import GatekeeperConfig
 from .logging_config import get_logger, log_prompt_response, log_strategy_creation
 from .utils import parallel_map
