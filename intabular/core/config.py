@@ -39,6 +39,21 @@ class GatekeeperConfig:
                              'additional_column_count': len(self.additional_columns),
                              'sample_rows': sample_rows
                          })
+        
+    @property
+    def all_columns(self) -> Dict[str, Dict[str, str]]:
+        """Get all columns"""
+        return {**self.enrichment_columns, **self.additional_columns}
+    
+    @property
+    def descriptive_columns(self) -> Dict[str, Dict[str, str]]:
+        """Get descriptive columns"""
+        return {k: v for k, v in self.all_columns.items() if v.get('is_entity_identifier') is False}
+    
+    @property
+    def entity_columns(self) -> Dict[str, Dict[str, str]]:
+        """Get entity columns"""
+        return {k: v for k, v in self.all_columns.items() if v.get('is_entity_identifier') is True}
     
     def get_enrichment_column_names(self) -> List[str]:
         """Get list of enrichment column names"""
@@ -67,6 +82,14 @@ class GatekeeperConfig:
         elif column_name in self.additional_columns:
             return self.additional_columns[column_name].get('match_type', 'semantic')
         return 'semantic'
+    
+    def get_interpretable_column_information(self, column_name: str) -> str:
+        """Get human-readable information about a column's configuration for LLM prompts"""
+        col_config = self.enrichment_columns.get(column_name) or self.additional_columns.get(column_name)
+        if not col_config:
+            raise ValueError(f"Column {column_name} not found in enrichment or additional columns")
+        filtered_config = {k: v for k, v in col_config.items() if k in ['description', 'supports_purpose_by'] and v}
+        return str(filtered_config)
     
     def to_yaml(self, filename: str):
         """Save configuration to YAML file"""

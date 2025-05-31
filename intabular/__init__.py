@@ -5,10 +5,10 @@ Automatically maps unknown CSV structures to well-defined target schemas using L
 """
 
 import os
-from .core.config import TableConfig, ColumnPolicy
-from .core.analyzer import CSVAnalyzer
-from .core.strategy import IngestionStrategy
-from .core.processor import IntelligentProcessor
+from .core.config import GatekeeperConfig
+from .core.analyzer import UnclearAssumptionsException
+from .core.strategy import DataframeIngestionStrategy
+from .core.processor import DataframeIngestionProcessor
 from .core.logging_config import setup_logging, get_logger
 from .main import run_ingestion_pipeline, create_config, setup_openai_client
 
@@ -28,11 +28,10 @@ __version__ = "0.2.0"
 __author__ = "Alexander Krauck"
 
 __all__ = [
-    "TableConfig",
-    "ColumnPolicy",
-    "CSVAnalyzer", 
-    "IngestionStrategy",
-    "IntelligentProcessor",
+    "GatekeeperConfig",
+    "UnclearAssumptionsException",
+    "DataframeIngestionStrategy",
+    "DataframeIngestionProcessor",
     "run_ingestion_pipeline",
     "create_config",
     "setup_openai_client",

@@ -1,31 +1,49 @@
 enrichment_columns:
   email:
     description: "Primary email address used for contacting the customer. We only want one email address per customer. Keep the more important one."
-    match_type: "perfect"
+    supports_purpose_by: "This is necessary for the purpose since we need to contact the customer."
+    is_entity_identifier: true
+    identity_indication: 1.0
   full_name:
-    description: "Full name of the customer"
-    match_type: "partial_perfect"
+    description: "Full name of the customer. Always 'firstname lastname' format and all lowercase."
+    supports_purpose_by: "This is necessary for the purpose since we need to contact the customer and have a name to address them."
+    is_entity_identifier: true
+    identity_indication: 0.6
   company_name:
-    description: "Full name of the company the customer works for"
-    match_type: "partial_perfect"
+    description: "Full name of the company the customer works for. This is a company name, not a person name."
+    supports_purpose_by: "This is necessary for the purpose since we need to contact the customer and have a company name to address them."
+    is_entity_identifier: true
+    identity_indication: 0.0
   deal_stage:
     description: "Stage of the deal described in a single sentence"
-    match_type: "semantic"
+    supports_purpose_by: "This is necessary for the purpose since we need to know the deal stage to know if the customer is interested in our product and to adapt our email and sales strategy."
+    is_entity_identifier: false
+    identity_indication: 0.0
   deal_value:
     description: "Value of the deal in a single sentence"
-    match_type: "semantic"
+    supports_purpose_by: "This is necessary for the purpose since we need to know the deal value to know if the customer is interested in our customer priority."
+    is_entity_identifer: false
+    identity_indication: 0.0
   phone:
     description: "Primary phone number used for contacting the customer. There must only be one phone number per customer."
-    match_type: "partial_perfect"
+    supports_purpose_by: "This is necessary for the purpose since we need to contact the customer and have a phone number to contact them."
+    is_entity_identifier: true
+    identity_indication: 0.6
   location:
     description: "Location of the customer in a sentence"
-    match_type: "semantic"
+    supports_purpose_by: "This is necessary for the purpose since we need to know the location of the customer to know if they are in the target market."
+    is_entity_identifier: true
+    identity_indication: 0.0
   notes:
     description: "Notes about the customer. Keep it short and concise."
-    match_type: "semantic"
+    supports_purpose_by: "This is necessary for the purpose since we need to know more personal information about the customer to write more personalized emails and sales pitches."
+    is_entity_identifier: true
+    identity_indication: 0.0
   enrichment_platforms:
     description: "Platforms used to enrich the customer data. It should be a dictionary with the platform name, date of enrichment, URL of the enrichment, and the full data that was obtained there in raw. This should not be parsed by the AI, but rather stored as is."
-    match_type: "perfect"
+    supports_purpose_by: "This is necessary for the purpose since we need to know what information we already ingested to this customer entry."
+    is_entity_identifier: false
+    identity_indication: 0.0
 
 
 purpose: >

@@ -1,688 +1,192 @@
 """
-Ingestion strategy creation for mapping unknown CSV to target schema.
+Entity-aware ingestion strategy creation for intelligent CSV mapping and merging.
 """
 
 import json
 import time
-from typing import Dict, Any, List, Tuple
+import re
+from typing import Dict, Any, List, Tuple, Optional
 from openai import OpenAI
-from .config import TableConfig
+from intabular.core.analyzer import DataframeAnalysis
+from .config import GatekeeperConfig
 from .logging_config import get_logger, log_prompt_response, log_strategy_creation
-from concurrent.futures import ThreadPoolExecutor
-import threading
+from .utils import parallel_map
 
 
-class IngestionStrategy:
-    """Creates intelligent mapping strategies for CSV ingestion"""
+class DataframeIngestionStrategyResult:
+    """Simple container for ingestion strategy results"""
     
+    def __init__(self, no_merge_column_mappings: Dict[str, Any], merge_column_mappings: Dict[str, Any]):
+        self.no_merge_column_mappings = no_merge_column_mappings
+        self.merge_column_mappings = merge_column_mappings
+
+
+class DataframeIngestionStrategy:
+    """Creates entity-aware mapping and merging strategies for CSV ingestion"""
+
     def __init__(self, openai_client: OpenAI):
         self.client = openai_client
-        self.max_parallel_calls = 4  # Limit parallel API calls for strategy creation
-        self.logger = get_logger('strategy')
-    
-    def create_ingestion_strategy(self, target_config: TableConfig, unknown_analysis: Dict) -> Dict[str, Any]:
-        """Create strategy to ingest unknown CSV into target table structure"""
-        
-        self.logger.info("🧠 Creating field-by-field ingestion strategy...")
-        
-        # Build target context
-        target_context = self._build_target_context(target_config)
-        self.logger.debug("Built target context", extra={'target_context': target_context})
-        
-        # Get all target columns that need mapping
-        target_columns = self._get_target_columns(target_config)
-        source_columns = unknown_analysis.get('column_semantics', {})
-        
-        self.logger.info(f"📋 Analyzing {len(target_columns)} target fields...", 
-                        extra={'target_columns': target_columns, 'source_column_count': len(source_columns)})
-        
-        # Create individual field mapping strategies in parallel
-        field_strategies = self._create_field_mappings_parallel(
-            target_columns, source_columns, target_context, unknown_analysis
-        )
-        
-        # Create overall ingestion plan
-        self.logger.info("🗺️ Creating overall ingestion plan...")
-        ingestion_plan = self._create_ingestion_plan(
-            target_config, unknown_analysis, field_strategies
-        )
-        
-        # Identify unmapped source columns
-        unmapped_columns = self._identify_unmapped_columns(
-            source_columns, field_strategies
-        )
-        
-        # Combine all results
-        strategy = {
-            "field_strategies": field_strategies,
-            "unmapped_source_columns": unmapped_columns,
-            **ingestion_plan
-        }
-        
-        # Log strategy summary
-        self._log_strategy_results(strategy)
-        
-        return strategy
-    
-    def _get_target_columns(self, config: TableConfig) -> List[str]:
-        """Extract target column names from config"""
-        if isinstance(config.enrichment_columns, dict):
-            return list(config.enrichment_columns.keys())
-        else:
-            return list(config.enrichment_columns)
-    
-    def _create_field_mappings_parallel(self, target_columns: List[str], 
-                                      source_columns: Dict[str, Any], 
-                                      target_context: str,
-                                      unknown_analysis: Dict) -> Dict[str, Any]:
-        """Create field mapping strategies in parallel"""
-        
-        field_strategies = {}
-        
-        # Process target columns in batches
-        batch_size = self.max_parallel_calls
-        for i in range(0, len(target_columns), batch_size):
-            batch = target_columns[i:i + batch_size]
-            
-            self.logger.debug(f"Processing batch {i//batch_size + 1} with {len(batch)} columns",
-                            extra={'batch_columns': batch})
-            
-            with ThreadPoolExecutor(max_workers=min(len(batch), self.max_parallel_calls)) as executor:
-                futures = {
-                    executor.submit(
-                        self._create_single_field_mapping, 
-                        target_col, 
-                        source_columns, 
-                        target_context,
-                        unknown_analysis
-                    ): target_col
-                    for target_col in batch
-                }
-                
-                for future in futures:
-                    target_col = futures[future]
-                    try:
-                        result = future.result(timeout=30)
-                        field_strategies[target_col] = result
-                        
-                        # Extract strategy info from dual structure
-                        strategy_exists = result.get('strategy_if_exists', {}).get('strategy', 'unknown')
-                        strategy_empty = result.get('strategy_if_empty', {}).get('strategy', 'unknown')
-                        overall_confidence = result.get('overall_confidence', 0)
-                        complexity = result.get('complexity_assessment', 'unknown')
-                        
-                        self.logger.info(f"✅ {target_col}: exists={strategy_exists}, empty={strategy_empty} "
-                                        f"(confidence: {overall_confidence:.2f}, complexity: {complexity})")
-                        
-                        # Log strategy creation with dual info
-                        source_mapping_exists = result.get('strategy_if_exists', {}).get('source_mapping', [])
-                        source_mapping_empty = result.get('strategy_if_empty', {}).get('source_mapping', [])
-                        all_sources = list(set(source_mapping_exists + source_mapping_empty))
-                        
-                        log_strategy_creation(
-                            self.logger, target_col, f"{strategy_exists}/{strategy_empty}", 
-                            overall_confidence, all_sources
-                        )
-                        
-                    except Exception as e:
-                        self.logger.error(f"❌ {target_col}: Strategy creation failed - {e}",
-                                        extra={'target_column': target_col, 'error': str(e)})
-                        field_strategies[target_col] = self._get_fallback_field_strategy(target_col)
-        
-        return field_strategies
-    
-    def _create_single_field_mapping(self, target_column: str, 
-                                   source_columns: Dict[str, Any],
-                                   target_context: str,
-                                   unknown_analysis: Dict) -> Dict[str, Any]:
-        """Create mapping strategy for a single target field with dual scenarios for existing vs empty data.
-        
-        Args:
-            target_column (str): Target table column name to map to.
-                
-            source_columns (Dict[str, Any]): Source column analysis data.
-                Structure: {column_name: {semantic_type, business_value, data_quality, 
-                sample_values, null_percentage, unique_percentage, pattern_analysis}}
-                
-            target_context (str): Target table schema description including purpose, 
-                column policy, and target column specifications.
-                
-            unknown_analysis (Dict): Source CSV analysis containing table_purpose, 
-                data_source, quality_assessment, column_semantics, row_count, confidence_score.
-                
-        Returns:
-            Dict[str, Any]: Dual mapping strategy with structure:
-            {
-                strategy_if_exists: {strategy, source_mapping, confidence, reasoning, 
-                                   transformation_rule, prompt_template, fallback_strategy},
-                strategy_if_empty: {same fields as strategy_if_exists},
-                overall_confidence: float,
-                complexity_assessment: str
-            }
-            
-        Strategy types: "replace", "prompt_merge", "concat", "derive", "preserve"
-        """
-        
-        self.logger.debug(f"Creating mapping strategy for {target_column}",
-                         extra={'target_column': target_column})
-        
-        # Define response schema for field mapping with dual scenarios
-        response_schema = {
-            "type": "object",
-            "properties": {
-                "strategy_if_exists": {
-                    "type": "object",
-                    "properties": {
-                        "strategy": {
-                            "type": "string",
-                            "enum": ["replace", "prompt_merge", "concat", "derive", "preserve"]
-                        },
-                        "source_mapping": {
-                            "type": "array",
-                            "items": {"type": "string"}
-                        },
-                        "confidence": {
-                            "type": "number",
-                            "minimum": 0,
-                            "maximum": 1
-                        },
-                        "reasoning": {
-                            "type": "string"
-                        },
-                        "transformation_rule": {
-                            "type": "string"
-                        },
-                        "prompt_template": {
-                            "type": "string"
-                        },
-                        "fallback_strategy": {
-                            "type": "string",
-                            "enum": ["preserve", "empty", "default_value"]
-                        }
-                    },
-                    "required": ["strategy", "source_mapping", "confidence", "reasoning", "transformation_rule", "prompt_template", "fallback_strategy"]
-                },
-                "strategy_if_empty": {
-                    "type": "object",
-                    "properties": {
-                        "strategy": {
-                            "type": "string",
-                            "enum": ["replace", "prompt_merge", "concat", "derive", "preserve"]
-                        },
-                        "source_mapping": {
-                            "type": "array",
-                            "items": {"type": "string"}
-                        },
-                        "confidence": {
-                            "type": "number",
-                            "minimum": 0,
-                            "maximum": 1
-                        },
-                        "reasoning": {
-                            "type": "string"
-                        },
-                        "transformation_rule": {
-                            "type": "string"
-                        },
-                        "prompt_template": {
-                            "type": "string"
-                        },
-                        "fallback_strategy": {
-                            "type": "string",
-                            "enum": ["preserve", "empty", "default_value"]
-                        }
-                    },
-                    "required": ["strategy", "source_mapping", "confidence", "reasoning", "transformation_rule", "prompt_template", "fallback_strategy"]
-                },
-                "overall_confidence": {
-                    "type": "number",
-                    "minimum": 0,
-                    "maximum": 1
-                },
-                "complexity_assessment": {
-                    "type": "string",
-                    "enum": ["simple", "moderate", "complex"]
-                }
-            },
-            "required": ["strategy_if_exists", "strategy_if_empty", "overall_confidence", "complexity_assessment"],
-            "additionalProperties": False
-        }
-        
-        # Prepare source column summary for this analysis
-        relevant_sources = self._find_relevant_source_columns(target_column, source_columns)
-        
+        self.logger = get_logger("strategy")
+
+    def create_ingestion_strategy(
+        self, target_config: GatekeeperConfig, dataframe_analysis: DataframeAnalysis
+    ) -> DataframeIngestionStrategyResult:
+        """Create entity-aware strategy to intelligently map and merge CSV data"""
+
+        self.logger.info("Creating entity-aware ingestion strategy...")
+
+
+        # Process entity matching columns in parallel
+        no_merge_column_mappings = dict(parallel_map(
+            lambda target_col: (target_col, self._create_no_merge_column_mappings(target_col, target_config, dataframe_analysis)),
+            list(target_config.all_columns.keys()),
+            max_workers=5,
+            timeout=30,
+            retries=3
+        ))
+
+
+        # Process remaining columns in parallel  
+        merge_column_mappings = dict(parallel_map(
+            lambda target_col: (target_col, self._create_descriptive_column_mapping(target_col, target_config, dataframe_analysis)),
+            list(target_config.descriptive_columns.keys()),
+            max_workers=5,
+            timeout=30,
+            retries=3
+        ))
+
+        return DataframeIngestionStrategyResult(no_merge_column_mappings, merge_column_mappings)
+
+    def _get_remaining_columns(
+        self, target_config: GatekeeperConfig, entity_matching_columns: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Get all columns that are NOT used for entity matching"""
+
+        remaining_columns = {}
+
+        for col_name, col_config in target_config.all_columns.items():
+            if col_name not in entity_matching_columns:
+                remaining_columns[col_name] = col_config
+
+        self.logger.info(f"Remaining columns: {list(remaining_columns.keys())}")
+        return remaining_columns
+
+    def _create_no_merge_column_mappings(
+        self,
+        target_col: str,
+        target_config: GatekeeperConfig,
+        dataframe_analysis: DataframeAnalysis,
+    ) -> Dict[str, Any]:
+        """Create mapping strategy for entity identifier columns - keep or replace, never merge content"""
+
         prompt = f"""
-        Create a dual mapping strategy for this target field by analyzing available source columns.
-        You must provide TWO strategies: one for when the target field already has data, and one for when it's empty.
+        Create a transformation strategy for columns to be transformed into the target column. That means there are input columns and a target column and the goal is to transform the input columns into the target column if possible.
         
-        TARGET FIELD: {target_column}
-        Target Context: {target_context}
+        GENERAL PURPOSE OF DATA: {target_config.general_purpose}
+        TARGET COLUMN INFORMATION:
+        {target_config.get_interpretable_column_information(target_col)}
         
         AVAILABLE SOURCE COLUMNS:
-        {json.dumps(relevant_sources, indent=2)}
+        {json.dumps(dataframe_analysis.dataframe_column_analysis, indent=2)}
         
-        SOURCE DATA CONTEXT:
-        Purpose: {unknown_analysis.get('table_purpose', 'unknown')}
-        Data Source: {unknown_analysis.get('data_source', 'unknown')}
-        
-        STRATEGY OPTIONS - Choose the most appropriate for each scenario:
-        
-        1. "replace": Direct Column Replacement
-           - Use when source has a direct equivalent to target field
-           - Source column contains the exact same type of data as target
-           - Example: source "email" → target "email_address"
-           - High confidence when semantic types match exactly
-           - No transformation needed, just copy values
-           - For existing data: overwrites current value completely
-           - For empty data: fills with source value
-        
-        2. "prompt_merge": LLM-Powered Intelligent Merging
-           - Use when combining complex data requires human-like reasoning
-           - Multiple sources need intelligent synthesis with existing data
-           - Example: merge existing "notes" + "othernotes" + "comments" → enhanced "notes"
-           - When business rules are complex and context-dependent
-           - For existing data: intelligently combines old and new information
-           - For empty data: creates new content from source fields
-           - Creates rich, meaningful combined data
-        
-        3. "concat": Simple Concatenation with Separator
-           - Use for straightforward text joining with delimiters
-           - Multiple source fields that should be joined
-           - Example: existing "location" + " | " + "additional_location" → "location"
-           - No intelligence needed, just string combination
-           - For existing data: appends new data with separator
-           - For empty data: joins source fields directly
-           - Fast and predictable results
-        
-        4. "derive": String Format Rule-Based Derivation
-           - Use when you can create new data through deterministic string formatting
-           - Apply format templates that can be called with string.format()
-           - MUST provide a format string usable with Python's string.format() method
-           - Available variables: {{existing_value}}, {{source_field1}}, {{source_field2}}, etc.
-           - Example: "{{existing_value}} | Updated: {{new_notes}}" or "{{first_name}} {{last_name}}"
-           - Example: "Customer since {{purchase_date}} ({{days_active}} days)" 
-           - For existing data: format string includes {{existing_value}}
-           - For empty data: format string uses only source fields
-           - Deterministic and fast execution
-        
-        5. "preserve": Keep Existing Target Data Unchanged
-           - Use when no suitable source mapping exists
-           - Target field is more valuable/accurate than any source
-           - Source data would degrade target data quality
-           - For existing data: always preserve current value
-           - For empty data: leave empty (no source data used)
-           - Strategic decision to maintain current data integrity
-        
-        DUAL SCENARIO REQUIREMENTS:
-        
-        STRATEGY_IF_EXISTS: When target field already contains data
-        - Consider how to handle conflicts between existing and new data
-        - Decide whether to merge, replace, or preserve existing information
-        - Balance data preservation with enhancement opportunities
-        - Example: existing "notes: Meeting scheduled" + source "comments: Client interested in upgrade"
-        
-        STRATEGY_IF_EMPTY: When target field is null/empty/NaN
-        - Focus on populating empty field with best available source data
-        - No conflict resolution needed, just optimal data selection
-        - Can be more aggressive since no existing data is at risk
-        - Example: empty "notes" + source "comments: Initial contact made"
-        
-        DERIVE FORMAT STRING REQUIREMENTS:
-        - Must be valid Python string.format() template
-        - Use {{variable_name}} syntax for placeholders
-        - For existing data scenarios: include {{existing_value}} if needed
-        - For source fields: use exact source column names as variables
-        - Example valid formats:
-          * "{{existing_value}} | {{new_field}}"
-          * "{{first_name}} {{last_name}}"
-          * "Updated: {{existing_value}} with {{source_notes}}"
-          * "{{company_name}} - {{contact_type}}"
-        
-        Focus on creating the best dual strategy for this specific target field.
-        Consider the business value and data quality implications of each approach.
-        """
-        
-        start_time = time.time()
-        
-        self.logger.debug(f"Sending dual strategy creation prompt for {target_column}",
-                         extra={'target_column': target_column, 'prompt_length': len(prompt)})
-        
+        TRANSFORMATION TYPES:
+        1. "format" - Apply deterministic transformation to normalize the value. Make sure to return rules that perfectly transform the input columns into the target column including all rules that the target column requires.
+           Examples:
+           - "email.strip().lower()" for email normalization
+           - "f'{{first_name.strip().lower()}} {{last_name.strip().lower()}}'" for name combination
+           - "re.sub(r'[^\\d]', '', phone)[:10]" for phone number cleanup
+        2. "llm_format" - Use LLM for complex normalization decisions. Thereby first, the transformation rules are applied and then fed to an LLM to transform the value into the target column.
+        3. "none" - No suitable source mapping found"""
+
         response = self.client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[{"role": "user", "content": prompt}],
             response_format={
                 "type": "json_schema",
                 "json_schema": {
-                    "name": "dual_field_mapping",
-                    "schema": response_schema
-                }
+                    "name": "entity_column_mapping",
+                    "schema": {
+                        "type": "object",
+                        "properties": {
+                            "transformation_type": {
+                                "type": "string",
+                                "enum": ["format", "llm_format", "none"],
+                            },
+                            "reasoning": {"type": "string"},
+                            "transformation_rule": {"type": "string"},
+                        },
+                        "required": ["transformation_type", "reasoning"],
+                        "additionalProperties": False,
+                    },
+                },
             },
-            temperature=0.1
+            temperature=0.1,
         )
         
-        duration = time.time() - start_time
-        response_content = response.choices[0].message.content
+        result = json.loads(response.choices[0].message.content)
         
-        # Log the prompt and response
-        log_prompt_response(
-            self.logger, prompt, response_content, 
-            model="gpt-4o-mini", duration=duration
-        )
+        if result["transformation_type"] != "none" and not result["transformation_rule"]:
+            #TODO: fallback to explicit LLM call to generate transformation rule only.
+            raise ValueError(f"Transformation rule is required for format transformation type for column {target_col}")
+
+        return result
+
+    def _create_descriptive_column_mapping(
+        self,
+        target_col: str,
+        target_config: GatekeeperConfig,
+        dataframe_analysis: DataframeAnalysis,
+    ) -> Dict[str, Any]:
+        """Create mapping strategy for descriptive columns - intelligent content merging with existing values"""
+
+        prompt_merge = f"""
+        Create a transformation strategy for a column.
         
-        return json.loads(response_content)
-    
-    def _find_relevant_source_columns(self, target_column: str, 
-                                    source_columns: Dict[str, Any]) -> Dict[str, Any]:
-        """Find source columns most relevant to target column"""
+        GENERAL PURPOSE OF DATA: {target_config.general_purpose}
+        TARGET COLUMN INFORMATION:
+        {target_config.get_interpretable_column_information(target_col)}
         
-        # Return top 5 most relevant source columns based on semantic similarity
-        # For now, return all source columns but this could be optimized
-        relevant = {col: data for col, data in list(source_columns.items())[:5]}
+        AVAILABLE SOURCE COLUMNS:
+        {json.dumps(dataframe_analysis.dataframe_column_analysis, indent=2)}
         
-        self.logger.debug(f"Found {len(relevant)} relevant source columns for {target_column}",
-                         extra={'target_column': target_column, 'relevant_sources': list(relevant.keys())})
+        CURRENT COLUMN INFORMATION:
+        You can also in the transformation_rules utilize the value of the target column that we merge into by using "current".
+
+        TRANSFORMATION TYPES:
+        1. "format" - Apply deterministic transformation to normalize the value. Make sure to return rules that perfectly transform the input columns into the target column including all rules that the target column requires.
+           Examples:
+           - "email.strip().lower()" for email normalization
+           - "f'{{first_name.strip().lower()}} {{last_name.strip().lower()}}'" for name combination
+           - "re.sub(r'[^\\d]', '', phone)[:10]" for phone number cleanup
+           - "f'Current: {{current}}, Notes: {{notes}}'" for merging of the current value with the notes column.
+           - "notes" for notes column alone without any other columns or modifications.
+        2. "llm_format" - Use LLM for complex normalization decisions. Thereby first, the transformation rules are applied and then fed to an LLM to transform the value into the target column.
+        3. "none" - No suitable source mapping found"""
         
-        return relevant
-    
-    def _create_ingestion_plan(self, target_config: TableConfig, 
-                             unknown_analysis: Dict,
-                             field_strategies: Dict[str, Any]) -> Dict[str, Any]:
-        """Create overall ingestion plan with schema-forced response"""
-        
-        self.logger.debug("Creating overall ingestion plan")
-        
-        # Define response schema for ingestion plan
-        response_schema = {
-            "type": "object",
-            "properties": {
-                "data_quality_rules": {
-                    "type": "object",
-                    "properties": {
-                        "deduplication": {
-                            "type": "object",
-                            "properties": {
-                                "strategy": {
-                                    "type": "string",
-                                    "enum": ["email_based", "name_company_based", "custom"]
-                                },
-                                "key_fields": {
-                                    "type": "array",
-                                    "items": {"type": "string"}
-                                },
-                                "resolution": {
-                                    "type": "string",
-                                    "enum": ["prefer_target", "prefer_source", "merge_both"]
-                                }
-                            },
-                            "required": ["strategy", "key_fields", "resolution"]
-                        },
-                        "validation": {
-                            "type": "object",
-                            "properties": {
-                                "email_validation": {"type": "boolean"},
-                                "phone_formatting": {"type": "boolean"},
-                                "name_standardization": {"type": "boolean"}
-                            },
-                            "required": ["email_validation", "phone_formatting", "name_standardization"]
-                        },
-                        "cleanup": {
-                            "type": "object",
-                            "properties": {
-                                "trim_whitespace": {"type": "boolean"},
-                                "standardize_formats": {"type": "boolean"},
-                                "handle_nulls": {
-                                    "type": "string",
-                                    "enum": ["preserve", "replace_with_empty", "skip"]
-                                }
-                            },
-                            "required": ["trim_whitespace", "standardize_formats", "handle_nulls"]
-                        }
-                    },
-                    "required": ["deduplication", "validation", "cleanup"]
-                },
-                "ingestion_plan": {
-                    "type": "object",
-                    "properties": {
-                        "processing_order": {
-                            "type": "array",
-                            "items": {"type": "string"}
-                        },
-                        "conflict_resolution": {"type": "string"},
-                        "error_handling": {
-                            "type": "string",
-                            "enum": ["continue", "stop", "log_and_continue"]
-                        },
-                        "validation_checks": {
-                            "type": "array",
-                            "items": {"type": "string"}
-                        }
-                    },
-                    "required": ["processing_order", "conflict_resolution", "error_handling", "validation_checks"]
-                },
-                "confidence_score": {
-                    "type": "number",
-                    "minimum": 0,
-                    "maximum": 1
-                },
-                "risk_assessment": {
-                    "type": "object",
-                    "properties": {
-                        "data_loss_risk": {
-                            "type": "string",
-                            "enum": ["low", "medium", "high"]
-                        },
-                        "quality_impact": {
-                            "type": "string",
-                            "enum": ["positive", "neutral", "negative"]
-                        },
-                        "schema_compatibility": {
-                            "type": "string",
-                            "enum": ["excellent", "good", "fair", "poor"]
-                        }
-                    },
-                    "required": ["data_loss_risk", "quality_impact", "schema_compatibility"]
-                },
-                "execution_summary": {
-                    "type": "object",
-                    "properties": {
-                        "total_fields_mapped": {"type": "integer"},
-                        "fields_requiring_llm": {"type": "integer"},
-                        "complex_transformations": {"type": "integer"},
-                        "estimated_processing_time": {
-                            "type": "string",
-                            "enum": ["fast", "medium", "slow"]
-                        }
-                    },
-                    "required": ["total_fields_mapped", "fields_requiring_llm", "complex_transformations", "estimated_processing_time"]
-                }
-            },
-            "required": ["data_quality_rules", "ingestion_plan", "confidence_score", "risk_assessment", "execution_summary"],
-            "additionalProperties": False
-        }
-        
-        # Calculate summary statistics
-        strategy_types_exists = []
-        strategy_types_empty = []
-        for field_strategy in field_strategies.values():
-            strategy_types_exists.append(field_strategy.get('strategy_if_exists', {}).get('strategy', 'unknown'))
-            strategy_types_empty.append(field_strategy.get('strategy_if_empty', {}).get('strategy', 'unknown'))
-        
-        llm_fields_exists = sum(1 for s in strategy_types_exists if s in ['prompt_merge', 'derive'])
-        llm_fields_empty = sum(1 for s in strategy_types_empty if s in ['prompt_merge', 'derive'])
-        llm_fields = max(llm_fields_exists, llm_fields_empty)  # Worst case scenario
-        
-        complex_transforms_exists = sum(1 for s in strategy_types_exists if s == 'derive')
-        complex_transforms_empty = sum(1 for s in strategy_types_empty if s == 'derive')
-        complex_transforms = complex_transforms_exists + complex_transforms_empty
-        
-        self.logger.debug("Dual strategy statistics calculated",
-                         extra={
-                             'total_fields': len(field_strategies),
-                             'llm_fields_worst_case': llm_fields,
-                             'complex_transforms_total': complex_transforms,
-                             'strategy_distribution_exists': dict([(s, strategy_types_exists.count(s)) for s in set(strategy_types_exists)]),
-                             'strategy_distribution_empty': dict([(s, strategy_types_empty.count(s)) for s in set(strategy_types_empty)])
-                         })
-        
-        prompt = f"""
-        Create an overall ingestion plan based on individual field mapping strategies:
-        
-        TARGET TABLE:
-        Purpose: {target_config.purpose}
-        Column Policy: {target_config.get_column_policy_text()}
-        
-        SOURCE DATA:
-        Purpose: {unknown_analysis.get('table_purpose', 'unknown')}
-        Quality: {unknown_analysis.get('quality_assessment', {})}
-        
-        FIELD STRATEGIES SUMMARY:
-        Total Fields: {len(field_strategies)}
-        Strategy Distribution: {dict([(s, strategy_types_exists.count(s)) for s in set(strategy_types_exists)])}
-        LLM-dependent Fields: {llm_fields}
-        Complex Transformations: {complex_transforms}
-        
-        Create comprehensive data quality rules, processing plan, and risk assessment.
-        Consider deduplication needs, validation requirements, and error handling.
-        Base recommendations on the specific field strategies already determined.
-        """
-        
-        start_time = time.time()
-        
+
         response = self.client.chat.completions.create(
             model="gpt-4o-mini",
-            messages=[{"role": "user", "content": prompt}],
+            messages=[{"role": "user", "content": prompt_merge}],
             response_format={
                 "type": "json_schema",
                 "json_schema": {
-                    "name": "ingestion_plan",
-                    "schema": response_schema
-                }
+                    "name": "descriptive_column_mapping",
+                    "schema": {
+                        "type": "object",
+                        "properties": {
+                            "transformation_type": {
+                                "type": "string",
+                                "enum": ["format", "llm_format", "none"],
+                            },
+                            "reasoning": {"type": "string"},
+                            "transformation_rule": {"type": "string"},
+                        },
+                        "required": ["transformation_type", "reasoning", "transformation_rule"],
+                        "additionalProperties": False,
+                    },
+                },
             },
-            temperature=0.1
+            temperature=0.1,
         )
-        
-        duration = time.time() - start_time
-        response_content = response.choices[0].message.content
-        
-        # Log the prompt and response
-        log_prompt_response(
-            self.logger, prompt, response_content,
-            model="gpt-4o-mini", duration=duration
-        )
-        
-        return json.loads(response_content)
-    
-    def _identify_unmapped_columns(self, source_columns: Dict[str, Any], 
-                                 field_strategies: Dict[str, Any]) -> Dict[str, Any]:
-        """Identify source columns that weren't mapped to any target field"""
-        
-        # Get all source columns used in mappings from both scenarios
-        mapped_sources = set()
-        for strategy in field_strategies.values():
-            # Add sources from both exists and empty scenarios
-            mapped_sources.update(strategy.get('strategy_if_exists', {}).get('source_mapping', []))
-            mapped_sources.update(strategy.get('strategy_if_empty', {}).get('source_mapping', []))
-        
-        # Find unmapped columns
-        unmapped = {}
-        for col_name, col_data in source_columns.items():
-            if col_name not in mapped_sources:
-                unmapped[col_name] = {
-                    "reason": f"No suitable target field found for {col_data.get('semantic_type', 'unknown')} data",
-                    "potential_use": self._suggest_potential_use(col_data),
-                    "action": "ignore"  # Default action
-                }
-        
-        self.logger.info(f"Identified {len(unmapped)} unmapped source columns",
-                        extra={'unmapped_columns': list(unmapped.keys()),
-                               'mapped_columns': list(mapped_sources)})
-        
-        return unmapped
-    
-    def _suggest_potential_use(self, col_data: Dict[str, Any]) -> str:
-        """Suggest potential use for unmapped column"""
-        semantic_type = col_data.get('semantic_type', 'unknown')
-        business_value = col_data.get('business_value', 'low')
-        
-        if business_value == 'high':
-            return "Consider adding to target schema for future use"
-        elif semantic_type in ['email', 'phone', 'name']:
-            return "Could be useful for contact enrichment"
-        elif semantic_type in ['company', 'title']:
-            return "Could be useful for business intelligence"
-        else:
-            return "May be stored as metadata if needed"
-    
-    def _get_fallback_field_strategy(self, target_column: str) -> Dict[str, Any]:
-        """Provide fallback strategy when API call fails"""
-        fallback_strategy = {
-            "strategy": "preserve",
-            "source_mapping": [],
-            "confidence": 0.1,
-            "reasoning": f"Strategy creation failed for {target_column}, defaulting to preserve",
-            "transformation_rule": "",
-            "prompt_template": "",
-            "fallback_strategy": "preserve"
-        }
-        
-        return {
-            "strategy_if_exists": fallback_strategy.copy(),
-            "strategy_if_empty": fallback_strategy.copy(),
-            "overall_confidence": 0.1,
-            "complexity_assessment": "simple"
-        }
-    
-    def _build_target_context(self, config: TableConfig) -> str:
-        """Build detailed context for target table"""
-        
-        context = f"Purpose: {config.purpose}\n"
-        context += f"Column Policy: {config.get_column_policy_text()}\n\n"
-        
-        context += "Target Column Specifications:\n"
-        if isinstance(config.enrichment_columns, dict):
-            for col, desc in config.enrichment_columns.items():
-                context += f"  - {col}: {desc}\n"
-        else:
-            for col in config.enrichment_columns:
-                context += f"  - {col}: Important field\n"
-        
-        return context
-    
-    def _log_strategy_results(self, strategy: Dict[str, Any]):
-        """Log strategy creation results"""
-        if 'field_strategies' in strategy:
-            self.logger.info("📋 Field mapping strategies:")
-            strategy_counts_exists = {}
-            strategy_counts_empty = {}
-            total_confidence = 0
-            field_count = 0
-            
-            for target_col, field_strategy in strategy['field_strategies'].items():
-                strategy_exists = field_strategy.get('strategy_if_exists', {}).get('strategy', 'unknown')
-                strategy_empty = field_strategy.get('strategy_if_empty', {}).get('strategy', 'unknown')
-                confidence = field_strategy.get('overall_confidence', 0)
-                
-                strategy_counts_exists[strategy_exists] = strategy_counts_exists.get(strategy_exists, 0) + 1
-                strategy_counts_empty[strategy_empty] = strategy_counts_empty.get(strategy_empty, 0) + 1
-                total_confidence += confidence
-                field_count += 1
-            
-            avg_confidence = total_confidence / field_count if field_count > 0 else 0
-            self.logger.info(f"📊 Strategy distribution (if exists): {dict(strategy_counts_exists)}")
-            self.logger.info(f"📊 Strategy distribution (if empty): {dict(strategy_counts_empty)}")
-            self.logger.info(f"🎯 Average field confidence: {avg_confidence:.2f}")
-        
-        if 'unmapped_source_columns' in strategy:
-            unmapped_count = len(strategy['unmapped_source_columns'])
-            if unmapped_count > 0:
-                self.logger.warning(f"⚠️  {unmapped_count} source columns will not be mapped")
-        
-        overall_confidence = strategy.get('confidence_score', 0)
-        self.logger.info(f"🎯 Overall strategy confidence: {overall_confidence:.2f}")
-        
-        if 'execution_summary' in strategy:
-            summary = strategy['execution_summary']
-            self.logger.info(f"⚡ Execution plan: {summary.get('total_fields_mapped', 0)} fields, "
-                           f"{summary.get('fields_requiring_llm', 0)} LLM calls, "
-                           f"{summary.get('estimated_processing_time', 'unknown')} speed",
-                           extra={'execution_summary': summary}) 
+
+        return json.loads(response.choices[0].message.content)

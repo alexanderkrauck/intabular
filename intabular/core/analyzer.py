@@ -18,7 +18,7 @@ class DataframeAnalysis:
     """Container for DataFrame analysis results"""
     
     def __init__(self, general_ingestion_analysis: Dict[str, Any], 
-                 dataframe_column_analysis: List[Dict[str, Any]]):
+                 dataframe_column_analysis: Dict[str, Any]):
         self.general_ingestion_analysis = general_ingestion_analysis
         self.dataframe_column_analysis = dataframe_column_analysis
 
@@ -94,19 +94,11 @@ class DataframeAnalyzer:
             "table_purpose": df_analysis['semantic_purpose']
         }
         
-        # Create column analysis list
-        column_analysis_list = [
-            {
-                "column_name": col_name,
-                **column_semantics[col_name]
-            }
-            for col_name in df.columns
-        ]
         
         # Create and return DataframeAnalysis object
         return DataframeAnalysis(
             general_ingestion_analysis=general_analysis,
-            dataframe_column_analysis=column_analysis_list
+            dataframe_column_analysis=column_semantics
         )
     
     def _validate_basic_structure(self, df: pd.DataFrame):
