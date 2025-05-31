@@ -1,5 +1,5 @@
 """
-Simplified CSV analysis for informed column understanding.
+Simplified Dataframe analysis for informed column understanding.
 """
 
 import json
@@ -27,34 +27,25 @@ class UnclearAssumptionsException(Exception):
         super().__init__(f"Unclear assumption ({assumption_type}): {message}")
 
 
-class CSVAnalyzer:
-    """Analyzes CSV columns to understand basic data types for later informed merging"""
+class DataframeAnalyzer:
+    """Analyzes DF columns to understand basic data types for later informed merging"""
     
     def __init__(self, openai_client: OpenAI, gatekeeper_config: GatekeeperConfig):
         self.client = openai_client
         self.sample_rows = gatekeeper_config.sample_rows  # Configurable number of rows to analyze
         self.logger = get_logger('analyzer')
     
-    def analyze_csv_structure(self, csv_path: str, additional_info: str = None) -> Dict[str, Any]:
-        """Simple analysis of CSV structure focusing on column classification"""
+    def analyze_dataframe_structure(self, df: pd.DataFrame, additional_info: str = None) -> Dict[str, Any]:
+        """Simple analysis of DF structure focusing on column classification"""
         
-        self.logger.info(f"📊 Starting simplified CSV analysis for: {Path(csv_path).name}")
+        self.logger.info(f"📊 Starting simplified Dataframe analysis for DataFrame")
         
-        # Set default additional_info to filename if not provided
+        # Set default additional_info if not provided
         if additional_info is None:
-            additional_info = f"the file name is {Path(csv_path).name}"
-        
-        # Load the CSV
-        try:
-            df = pd.read_csv(csv_path)
-        except Exception as e:
-            raise UnclearAssumptionsException(
-                f"Cannot read CSV file {csv_path}: {e}",
-                assumption_type="file_structure"
-            )
+            additional_info = "DataFrame provided without additional context"
         
         # Validate basic pandas-level assumptions
-        self._validate_basic_structure(df, csv_path)
+        self._validate_basic_structure(df)
         
         # Remove columns that have no non-null values or only empty strings
         empty_cols = df.columns[
@@ -65,12 +56,12 @@ class CSVAnalyzer:
             self.logger.info(f"🗑️ Removing {len(empty_cols)} empty columns: {empty_cols}")
             df = df.drop(columns=empty_cols)
         
-        # Analyze CSV structure and semantic purpose with LLM
-        csv_analysis = self._analyze_csv_with_llm(csv_path, additional_info)
+        # Analyze Dataframe structure and semantic purpose with LLM
+        df_analysis = self._analyze_dataframe_with_llm(df, additional_info)
         
-        self.logger.info(f"📈 CSV dimensions: {len(df)} rows × {len(df.columns)} columns")
+        self.logger.info(f"📈 DF dimensions: {len(df)} rows × {len(df.columns)} columns")
         self.logger.info(f"🔍 Using {self.sample_rows} sample rows for semantic analysis")
-        self.logger.info(f"🎯 Semantic purpose: {csv_analysis.get('semantic_purpose', 'Unknown')}")
+        self.logger.info(f"🎯 Semantic purpose: {df_analysis.get('semantic_purpose', 'Unknown')}")
         
         # Analyze individual columns in parallel
         column_results = parallel_map(
@@ -90,47 +81,45 @@ class CSVAnalyzer:
             "column_names": list(df.columns),
             "column_semantics": column_semantics,
             # Add semantic analysis from LLM
-            "table_purpose": csv_analysis['semantic_purpose'],
+            "table_purpose": df_analysis['semantic_purpose'],
         }
         
         return analysis
     
-    def _validate_basic_structure(self, df: pd.DataFrame, csv_path: str):
-        """Validate basic pandas-level assumptions about the CSV structure"""
+    def _validate_basic_structure(self, df: pd.DataFrame):
+        """Validate basic pandas-level assumptions about the DF structure"""
         
         # Check if dataframe is empty
         if df.empty:
             raise UnclearAssumptionsException(
-                f"CSV file {csv_path} is empty - cannot make assumptions about data structure",
+                f"DataFrame is empty - cannot make assumptions about data structure",
                 assumption_type="data_presence"
             )
         
         # Check for meaningful column headers
         if len(df.columns) == 0:
             raise UnclearAssumptionsException(
-                f"CSV file {csv_path} has no columns - cannot determine data structure",
+                f"DataFrame has no columns - cannot determine data structure",
                 assumption_type="column_headers"
             )
         
-        self.logger.debug(f"✅ Basic structure validated for {csv_path}")
+        self.logger.debug(f"✅ Basic structure validated for DataFrame")
     
-    def _analyze_csv_with_llm(self, csv_path: str, additional_info: str) -> dict:
-        """Use LLM to analyze CSV structure and semantic purpose by examining first two rows"""
+    def _analyze_dataframe_with_llm(self, df: pd.DataFrame, additional_info: str) -> dict:
+        """Use LLM to analyze DF structure and semantic purpose by examining first two rows"""
         
         try:
-            # Read first two rows without assuming headers
-            df_raw = pd.read_csv(csv_path, header=None, nrows=2)
-            
-            if len(df_raw) < 1:
+            if len(df) < 1:
                 raise UnclearAssumptionsException(
-                    f"CSV file {csv_path} is empty or has no header row",
+                    f"DataFrame is empty or has no data rows",
                     assumption_type="data_presence"
                 )
             
-            first_row = df_raw.iloc[0].astype(str).tolist()
-            second_row = df_raw.iloc[1].astype(str).tolist() if len(df_raw) > 1 else []
+            # Get first two rows from the DataFrame
+            first_row = df.iloc[0].astype(str).tolist()
+            second_row = df.iloc[1].astype(str).tolist() if len(df) > 1 else []
             
-            # Response schema for comprehensive CSV analysis
+            # Response schema for comprehensive DF analysis
             response_schema = {
                 "type": "object",
                 "properties": {
@@ -143,14 +132,14 @@ class CSVAnalyzer:
             }
             
             prompt = f"""
-            Analyze this CSV file to understand both its structure and semantic purpose:
+            Analyze this Dataframe to understand both its structure and semantic purpose:
             
             FIRST ROW: {first_row}
             {f"SECOND ROW: {second_row}" if second_row else "ONLY ONE ROW AVAILABLE"}
             
             ADDITIONAL CONTEXT (for reference only, not definitive): {additional_info}
             Note: The additional context above is supplementary information that may provide hints 
-            about the file's purpose, but you should base your analysis primarily on the actual 
+            about the dataframe's purpose, but you should base your analysis primarily on the actual 
             data structure and content patterns you observe.
             
             Please determine:
@@ -159,7 +148,7 @@ class CSVAnalyzer:
                - Headers: descriptive names like ["name", "email", "company", "first_name"]  
                - Data: actual values like ["John Smith", "john@example.com", "Acme Corp"]
             
-            2. SEMANTIC PURPOSE: What does this CSV file represent? Provide a clear, concise description.
+            2. SEMANTIC PURPOSE: What does this Dataframe represent? Provide a clear, concise description.
                Examples: "Contact list with names and email addresses", "Employee directory with contact information", 
                "Customer database with purchase history", "Survey responses about product satisfaction"
             
@@ -174,7 +163,7 @@ class CSVAnalyzer:
                 response_format={
                     "type": "json_schema",
                     "json_schema": {
-                        "name": "csv_analysis",
+                        "name": "dataframe_analysis",
                         "schema": response_schema
                     }
                 },
@@ -195,14 +184,14 @@ class CSVAnalyzer:
             # Check for header assumption violation
             if not result.get('has_header', False):
                 raise UnclearAssumptionsException(
-                    f"CSV file {csv_path} appears to have no header row - "
+                    f"DataFrame appears to have no header row - "
                     f"first row contains data values rather than descriptive column names. "
                     f"Cannot make semantic assumptions without proper column headers. "
                     f"LLM reasoning: {result.get('reasoning', '')}",
                     assumption_type="column_headers"
                 )
             
-            self.logger.info(f"🔍 CSV Analysis for {csv_path}:")
+            self.logger.info(f"🔍 DF Analysis for DataFrame:")
             self.logger.info(f"  📋 Has headers: {result.get('has_header', False)}")
             self.logger.info(f"  🎯 Purpose: {result.get('semantic_purpose', 'Unknown')}")
             self.logger.info(f"  💭 Reasoning: {result.get('reasoning', '')}")
@@ -213,7 +202,7 @@ class CSVAnalyzer:
             # Re-raise UnclearAssumptionsException as-is
             raise
         except Exception as e:
-            self.logger.error(f"❌ CSV analysis failed for {csv_path}: {e}")
+            self.logger.error(f"❌ DF analysis failed for DataFrame: {e}")
             # Fallback: assume it has headers and is unknown type
             return {
                 "has_header": True,
@@ -258,7 +247,7 @@ class CSVAnalyzer:
         ]
 
         prompt = f"""
-        Classify this CSV column as either "identifier" or "text":
+        Classify this Dataframe column as either "identifier" or "text":
         
         COLUMN NAME: {col_name}
         SAMPLE VALUES (newlines removed): {cleaned_samples}
