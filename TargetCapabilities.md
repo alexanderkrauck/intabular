@@ -14,6 +14,16 @@
 
 The system maintains a **semantic schema** that describes what the data *means* in business terms, while automatically managing the underlying syntactic structure to support those semantics.
 
+### AGI aware software architecture
+
+AGI will eventually build an even more advanced semantic layer around information management. This is but a draft on how an initial version might unfold itself. In order to enable this, the structure is created in a modular and adaptive way. Ultimately it can be imagined as a "knowledge core" that is managed by intabular. Any information that wants to become part of the knowledge effectively will need to pass the knowledge gatekeeping system which intabular provides a possible implementation for. However, there could be other more advanced implementations for this.
+
+Intabular attempts to not only provide the first ever implementation of this but instead it also attempts to showcase the general philosophy of how a gatekeeper can be imagined in a general sense. We suspect that any AGI like system will need to have its own knowledge core managed by a very advanced gatekeeper.  In the following we attempt to visually showcase how intabular attempts to do that.
+
+
+
+
+
 ## 🛣️ Implementation Strategy
 
 ### **Phase 1: Core Semantic CRUD** *(Current)*
