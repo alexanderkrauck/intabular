@@ -52,4 +52,4 @@ purpose: >
   be prioritized in merges. The goal is to have all information required in order to contact
   the customer per email or per phone. All information relevant for this can be stored here.
   
-target: "customer_table.csv"
+target_file_path: "customer_table.csv"

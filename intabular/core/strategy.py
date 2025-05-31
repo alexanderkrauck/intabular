@@ -79,10 +79,12 @@ class DataframeIngestionStrategy:
     ) -> Dict[str, Any]:
         """Create mapping strategy for entity identifier columns - keep or replace, never merge content"""
 
+        self.logger.info(f"Creating no merge column mapping for column {target_col} using dataframe analysis {dataframe_analysis.dataframe_column_analysis}")
+
         prompt = f"""
         Create a transformation strategy for columns to be transformed into the target column. That means there are input columns and a target column and the goal is to transform the input columns into the target column if possible.
         
-        GENERAL PURPOSE OF DATA: {target_config.general_purpose}
+        GENERAL PURPOSE OF DATA: {target_config.purpose}
         TARGET COLUMN INFORMATION:
         {target_config.get_interpretable_column_information(target_col)}
         
@@ -142,7 +144,7 @@ class DataframeIngestionStrategy:
         prompt_merge = f"""
         Create a transformation strategy for a column.
         
-        GENERAL PURPOSE OF DATA: {target_config.general_purpose}
+        GENERAL PURPOSE OF DATA: {target_config.purpose}
         TARGET COLUMN INFORMATION:
         {target_config.get_interpretable_column_information(target_col)}
         

@@ -40,8 +40,7 @@ def setup_openai_client() -> OpenAI:
     return client
 
 
-def run_ingestion_pipeline(yaml_config_file: str, csv_to_ingest: str, 
-                          output_file: Optional[str] = None) -> pd.DataFrame:
+def run_ingestion_pipeline(yaml_config_file: str, csv_to_ingest: str) -> pd.DataFrame:
     """Run the complete intelligent CSV ingestion pipeline"""
     
     logger = get_logger('main')
@@ -66,18 +65,10 @@ def run_ingestion_pipeline(yaml_config_file: str, csv_to_ingest: str,
     logger.info(f"🎯 Purpose: {target_config.purpose[:80]}...")
     logger.info(f"📊 Target columns: {len(target_config.get_enrichment_column_names())}")
         
-    # Create target table structure if it doesn't exist
-    target_table_path = Path(target_config.target_file_path)
-    if not target_table_path.exists():
-        target_columns = target_config.get_enrichment_column_names()
-        empty_df = pd.DataFrame(columns=target_columns)
-        empty_df.to_csv(target_table_path, index=False)
-        
-        logger.info(f"📋 Created initial target table structure with {len(target_columns)} columns")
-    
+
     # Read the CSV to ingest and the target table
-    df_to_ingest = pd.read_csv(csv_to_ingest)
-    df_to_enrich = pd.read_csv(target_table_path)
+    df_to_ingest = pd.read_csv(csv_to_ingest)#TODO This already assumes we have a header
+    df_to_enrich = pd.read_csv(target_config.target_file_path) if Path(target_config.target_file_path).exists() else pd.DataFrame()
     
     # Analyze the CSV
     logger.info("📊 Analyzing CSV...")
@@ -93,12 +84,13 @@ def run_ingestion_pipeline(yaml_config_file: str, csv_to_ingest: str,
     ingested_df = processor.execute_ingestion(
     df_to_ingest,
     df_to_enrich,
-    strategy
+    strategy,
+    target_config
     )
     
     # Save results
-    logger.info(f"💾 Saving results to: {output_file}")
-    ingested_df.to_csv(output_file, index=False)
+    logger.info(f"💾 Saving results to: {target_config.target_file_path}")
+    ingested_df.to_csv(target_config.target_file_path, index=False)
     
     # Final summary
     logger.info("\n🎉 Ingestion Pipeline Complete!")

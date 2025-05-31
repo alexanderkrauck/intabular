@@ -61,10 +61,12 @@ class DataframeAnalyzer:
         self._validate_basic_structure(df)
         
         # Remove columns that have no non-null values or only empty strings
-        empty_cols = df.columns[
-            (df.isna().all()) | 
-            ((df.astype(str).str.strip() == '').all())
-        ].tolist()
+        empty_cols = []
+        for col in df.columns:
+            # Check if column is all null OR all empty strings after stripping
+            if df[col].isna().all() or (df[col].astype(str).str.strip() == '').all():
+                empty_cols.append(col)
+        
         if empty_cols:
             self.logger.info(f"🗑️ Removing {len(empty_cols)} empty columns: {empty_cols}")
             df = df.drop(columns=empty_cols, inplace=True)
@@ -131,8 +133,8 @@ class DataframeAnalyzer:
                 )
             
             # Get first two rows from the DataFrame
-            first_row = df.iloc[0].astype(str).tolist()
-            second_row = df.iloc[1].astype(str).tolist() if len(df) > 1 else []
+            header = df.columns.tolist()
+            first_row = df.iloc[0].astype(str).tolist() if len(df) >= 1 else []
             
             # Response schema for comprehensive DF analysis
             response_schema = {
@@ -149,8 +151,8 @@ class DataframeAnalyzer:
             prompt = f"""
             Analyze this Dataframe to understand both its structure and semantic purpose:
             
-            FIRST ROW: {first_row}
-            {f"SECOND ROW: {second_row}" if second_row else "ONLY ONE ROW AVAILABLE"}
+            FIRST ROW/HEADER: {header}
+            {f"SECOND ROW: {first_row}" if first_row else "ONLY ONE ROW AVAILABLE"}
             
             ADDITIONAL CONTEXT (for reference only, not definitive): {additional_info}
             Note: The additional context above is supplementary information that may provide hints 
@@ -159,9 +161,9 @@ class DataframeAnalyzer:
             
             Please determine:
             
-            1. HEADER DETECTION: Does the first row contain column headers or actual data?
+            1. HEADER DETECTION: Does the first row contain column headers or actual data/palceholder values?
                - Headers: descriptive names like ["name", "email", "company", "first_name"]  
-               - Data: actual values like ["John Smith", "john@example.com", "Acme Corp"]
+               - Data: actual values like ["John Smith", "john@example.com", "Acme Corp"] or placeholder values like ["1", "2", "3"]
             
             2. SEMANTIC PURPOSE: What does this Dataframe represent? Provide a clear, concise description.
                Examples: "Contact list with names and email addresses", "Employee directory with contact information", 
@@ -173,7 +175,7 @@ class DataframeAnalyzer:
             start_time = time.time()
             
             response = self.client.chat.completions.create(
-                model="gpt-4o-mini",
+                model="gpt-4o",
                 messages=[{"role": "user", "content": prompt}],
                 response_format={
                     "type": "json_schema",
@@ -231,12 +233,12 @@ class DataframeAnalyzer:
         # Get sample values (non-null, unique, limited by sample_rows)
         sample_values = series.dropna().unique()[:self.sample_rows].tolist()
         
-        # Basic statistics
+        # Basic statistics - convert to native Python types for JSON serialization
         stats = {
-            "total_count": len(series),
-            "non_null_count": series.count(),
-            "unique_count": series.nunique(),
-            "completeness": series.count() / len(series) if len(series) > 0 else 0
+            "total_count": int(len(series)),
+            "non_null_count": int(series.count()),
+            "unique_count": int(series.nunique()),
+            "completeness": float(series.count() / len(series)) if len(series) > 0 else 0.0
         }
         
         # Simple schema - just identifier vs text
@@ -291,7 +293,7 @@ class DataframeAnalyzer:
         
         try:
             response = self.client.chat.completions.create(
-                model="gpt-4o-mini",
+                model="gpt-4o",
                 messages=[{"role": "user", "content": prompt}],
                 response_format={
                     "type": "json_schema",

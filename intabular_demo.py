@@ -35,7 +35,7 @@ setup_logging(level="INFO", console_output=True)
 
 # %%
 # Run ingestion with full logging
-result_df = run_ingestion_pipeline("yaml_example.yaml", "apollo-contacts-export.csv")
+result_df = run_ingestion_pipeline("yaml_example.yaml", ".aisandbox/unknown_apollo_export.csv")
 print(f"✅ Processed {len(result_df)} rows")
 
 # %%
