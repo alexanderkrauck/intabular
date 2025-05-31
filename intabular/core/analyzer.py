@@ -69,7 +69,7 @@ class DataframeAnalyzer:
         
         if empty_cols:
             self.logger.info(f"🗑️ Removing {len(empty_cols)} empty columns: {empty_cols}")
-            df = df.drop(columns=empty_cols, inplace=True)
+            df.drop(columns=empty_cols, inplace=True)
         
         # Modify column names to be python style (lowercase with underscores and no special characters)
         df.columns = df.columns.str.replace('[^a-zA-Z0-9]', '_', regex=True).str.lower()

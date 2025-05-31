@@ -8,6 +8,7 @@ import re
 from typing import Dict, Any, List, Tuple, Optional
 from openai import OpenAI
 from intabular.core.analyzer import DataframeAnalysis
+from intabular.core.transformer import SAFE_NAMESPACE
 from .config import GatekeeperConfig
 from .logging_config import get_logger, log_prompt_response, log_strategy_creation
 from .utils import parallel_map
@@ -98,7 +99,10 @@ class DataframeIngestionStrategy:
            - "f'{{first_name.strip().lower()}} {{last_name.strip().lower()}}'" for name combination
            - "re.sub(r'[^\\d]', '', phone)[:10]" for phone number cleanup
         2. "llm_format" - Use LLM for complex normalization decisions. Thereby first, the transformation rules are applied and then fed to an LLM to transform the value into the target column.
-        3. "none" - No suitable source mapping found"""
+        3. "none" - No suitable source mapping found
+        
+        SAFE_NAMESPACE functions if using transformation rules in python syntax:
+        {SAFE_NAMESPACE.keys()}"""
 
         response = self.client.chat.completions.create(
             model="gpt-4o-mini",
@@ -163,7 +167,10 @@ class DataframeIngestionStrategy:
            - "f'Current: {{current}}, Notes: {{notes}}'" for merging of the current value with the notes column.
            - "notes" for notes column alone without any other columns or modifications.
         2. "llm_format" - Use LLM for complex normalization decisions. Thereby first, the transformation rules are applied and then fed to an LLM to transform the value into the target column.
-        3. "none" - No suitable source mapping found"""
+        3. "none" - No suitable source mapping found
+        
+        SAFE_NAMESPACE functions if using transformation rules in python syntax:
+        {SAFE_NAMESPACE.keys()}"""
         
 
         response = self.client.chat.completions.create(
