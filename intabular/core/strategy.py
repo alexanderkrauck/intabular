@@ -83,49 +83,80 @@ class DataframeIngestionStrategy:
 
         self.logger.info(f"Creating no merge column mapping for column {target_col} using dataframe analysis {dataframe_analysis.dataframe_column_analysis}")
 
-        prompt = textwrap.dedent(f"""
-            Create a transformation strategy for columns to be transformed into the target column. That means there are input columns and a target column and the goal is to transform the input columns into the target column if possible.
+        prompt_no_merge = textwrap.dedent("""
+            You are creating a data transformation strategy for entity identifier columns in a database ingestion process.
             
-            GENERAL PURPOSE OF DATA: {target_config.purpose}
-            TARGET COLUMN INFORMATION:
-            {target_config.get_interpretable_column_information(target_col)}
+            CONTEXT: New incoming data needs to be transformed into entity identifier columns that uniquely identify records.
+            These are columns used for entity matching and should never merge content - they either replace or keep existing values.
+            Your task is to analyze the incoming columns and determine how to transform them into the target column format.
             
-            AVAILABLE SOURCE COLUMNS:
-            {json.dumps(dataframe_analysis.dataframe_column_analysis, indent=2)}
+            The general purpose of the database is: {target_purpose}
+            The details about the target column we are transforming into is: {target_column_info}
             
-            TRANSFORMATION TYPES:
-            1. "format" - Apply deterministic transformation to normalize the value. Make sure to return rules that perfectly transform the input columns into the target column including all rules that the target column requires.
-               Examples:
-               - "email.strip().lower()" for email normalization
-               - "f'{{first_name.strip().lower()}} {{last_name.strip().lower()}}'" for name combination
-               - "re.sub(r'[^\\d]', '', phone)[:10]" for phone number cleanup
-            2. "llm_format" - Use LLM for complex normalization decisions. Thereby first, the transformation rules are applied and then fed to an LLM to transform the value into the target column.
-            3. "none" - No suitable source mapping found
+            Rigorous information about the incoming dataframe columns is:
+            {source_columns}
             
-            SAFE_NAMESPACE functions if using transformation rules in python syntax:
-            {SAFE_NAMESPACE.keys()}
+            The goal is to create a transformation rule that converts the incoming source data into the exact target column format,
+            ensuring proper normalization for entity identification purposes.
         """).strip()
+
+        # Enhanced schema with embedded transformation rules and examples
+        response_schema = {
+            "type": "object",
+            "title": "Entity Column Transformation Strategy",
+            "description": "Strategy for transforming source columns into entity identifier column format.",
+            
+            "properties": {
+                "reasoning": {
+                    "type": "string",
+                    "title": "Transformation Reasoning", 
+                    "description": "Explanation of why this transformation approach was chosen and how it maps source to target for entity identification",
+                    "minLength": 20,
+                    "maxLength": 300
+                },
+                
+                "transformation_type": {
+                    "type": "string",
+                    "enum": ["format", "llm_format", "none"],
+                    "title": "Transformation Method",
+                    "description": "format: Apply deterministic Python transformation rules for normalization | llm_format: Use LLM for complex normalization decisions after applying rules | none: No suitable source mapping found",
+                    "examples": ["format", "llm_format", "none"],
+                    "$comment": "Choose 'format' for deterministic transformations like email normalization, 'llm_format' when LLM processing is needed after rule application, 'none' when no mapping is possible. Entity columns typically use 'format' for consistent normalization."
+                },
+                
+                "transformation_rule": {
+                    "type": "string",
+                    "title": "Transformation Rule", 
+                    "description": f"Python expression for transforming source data into normalized entity identifier format. You may use source column names as variables. Make sure to return rules that perfectly transform the input columns into the target column including all normalization rules that the target column requires. The only available functions for transformations are: {str(SAFE_NAMESPACE.keys())}",
+                    "examples": [
+                        "email.strip().lower()",
+                        "f'{{first_name.strip().lower()}} {{last_name.strip().lower()}}'",
+                        "re.sub(r'[^\\d]', '', phone)[:10]",
+                        "company_name.strip().upper()",
+                        "user_id.strip()",
+                        "datetime.strptime(date_str, '%Y-%m-%d').strftime('%Y-%m-%d')"
+                    ],
+                    "minLength": 1,
+                    "$comment": "The transformation rule must normalize the source column into a format that perfectly matches the target column requirements including case sensitivity, formatting, and validation rules. Must be a valid Python expression."
+                }
+            },
+            
+            "required": ["reasoning", "transformation_type", "transformation_rule"],
+            "additionalProperties": False
+        }
 
         llm_kwargs = {
             "model": os.getenv("INTABULAR_STRATEGY_MODEL", "gpt-4o"),
-            "messages": [{"role": "user", "content": prompt}],
+            "messages": [{"role": "user", "content": prompt_no_merge.format(
+                target_purpose=target_config.purpose,
+                target_column_info=target_config.get_interpretable_column_information(target_col),
+                source_columns=json.dumps(dataframe_analysis.dataframe_column_analysis, indent=2)
+            )}],
             "response_format": {
                 "type": "json_schema",
                 "json_schema": {
                     "name": "entity_column_mapping",
-                    "schema": {
-                        "type": "object",
-                        "properties": {
-                            "transformation_type": {
-                                "type": "string",
-                                "enum": ["format", "llm_format", "none"],
-                            },
-                            "reasoning": {"type": "string"},
-                            "transformation_rule": {"type": "string"},
-                        },
-                        "required": ["transformation_type", "reasoning"],
-                        "additionalProperties": False,
-                    },
+                    "schema": response_schema
                 },
             },
             "temperature": 0.1,
@@ -138,7 +169,7 @@ class DataframeIngestionStrategy:
         
         result = json.loads(response.choices[0].message.content)
         
-        if result["transformation_type"] != "none" and not result["transformation_rule"]:
+        if result["transformation_type"] != "none" and not result.get("transformation_rule"):
             #TODO: fallback to explicit LLM call to generate transformation rule only.
             raise ValueError(f"Transformation rule is required for format transformation type for column {target_col}")
 
@@ -152,55 +183,80 @@ class DataframeIngestionStrategy:
     ) -> Dict[str, Any]:
         """Create mapping strategy for descriptive columns - intelligent content merging with existing values"""
 
-        prompt_merge = textwrap.dedent(f"""
-            Create a transformation strategy for a column.
+        prompt_merge = textwrap.dedent("""
+            You are creating a data transformation strategy for ingesting new data into an existing database.
             
-            GENERAL PURPOSE OF DATA: {target_config.purpose}
-            TARGET COLUMN INFORMATION:
-            {target_config.get_interpretable_column_information(target_col)}
+            CONTEXT: New incoming data in the form of a dataframe needs to be transformed and merged into an existing database column. 
+            Your task is to analyze the incoming columns and determine how to transform them into 
+            the target column format if applicable.
             
-            AVAILABLE SOURCE COLUMNS:
-            {json.dumps(dataframe_analysis.dataframe_column_analysis, indent=2)}
+            The general purpose of the database is: {target_purpose}
+            The details about the column we are trying to merge into is: {target_column_info}
             
-            CURRENT COLUMN INFORMATION:
-            You can also in the transformation_rules utilize the value of the target column that we merge into by using "current".
-
-            TRANSFORMATION TYPES:
-            1. "format" - Apply deterministic transformation to normalize the value. Make sure to return rules that perfectly transform the input columns into the target column including all rules that the target column requires.
-               Examples:
-               - "email.strip().lower()" for email normalization
-               - "f'{{first_name.strip().lower()}} {{last_name.strip().lower()}}'" for name combination
-               - "re.sub(r'[^\\d]', '', phone)[:10]" for phone number cleanup
-               - "f'Current: {{current}}, Notes: {{notes}}'" for merging of the current value with the notes column.
-               - "notes" for notes column alone without any other columns or modifications.
-            2. "llm_format" - Use LLM for complex normalization decisions. Thereby first, the transformation rules are applied and then fed to an LLM to transform the value into the target column.
-            3. "none" - No suitable source mapping found
+            Rigorious information about the incoming dataframe columns is:
+            {source_columns}
             
-            SAFE_NAMESPACE functions if using transformation rules in python syntax:
-            {SAFE_NAMESPACE.keys()}
+            The goal is to create a transformation rule that converts the incoming source data into the target column format, potentially merging with existing content when appropriate or combining the content of multiple incoming columns.
         """).strip()
         
+        # Enhanced schema with embedded transformation rules and examples
+        response_schema = {
+            "type": "object",
+            "title": "Column Transformation Strategy",
+            "description": f"Strategy for transforming source columns into target column format.",
+            
+            "properties": {
+                "reasoning": {
+                    "type": "string",
+                    "title": "Transformation Reasoning",
+                    "description": "Explanation of why this transformation approach was chosen and how it maps source to target",
+                    "minLength": 20,
+                    "maxLength": 300
+                },
+                
+                "transformation_type": {
+                    "type": "string",
+                    "enum": ["format", "llm_format", "none"],
+                    "title": "Transformation Method",
+                    "description": "format: Apply deterministic Python transformation rules | llm_format: Use LLM for complex normalization after applying rules | none: No suitable source mapping found",
+                    "examples": ["format", "llm_format", "none"],
+                    "$comment": "Choose 'format' for deterministic transformations, 'llm_format' when LLM processing is needed after rule application, 'none' when no mapping is possible. 'none' should be used if you are unsure and it is absolutely okay to choose it."
+                },
+                
+                "transformation_rule": {
+                    "type": "string", 
+                    "title": "Transformation Rule",
+                    "description": f"Python expression or column reference for transforming source data. You may use source column names as variables. Moreover, the current target column value can be referenced with 'current' for merging scenarios. It is strongly adviced to also include the current value in the transformation as otherwise the current information is lost. The only available functions for transformations are: {str(SAFE_NAMESPACE.keys())}",
+                    "examples": [
+                        "email.strip().lower()",
+                        "f'{first_name.strip().lower()} {last_name.strip().lower()}'",
+                        "re.sub(r'[^\\d]', '', phone)[:10]",
+                        "f'Current: {current}, Notes: {notes}'",
+                        "notes",
+                        "company_name.strip().upper()",
+                        "datetime.strptime(date_str, '%Y-%m-%d').strftime('%m/%d/%Y')"
+                    ],
+                    "minLength": 1,
+                    "$comment": "It is essential to format the source column into a format that fully respects the prosa formatting rules of the target column, including how case sensitivity is treated, etc. The transformation rule must always be a valid Python expression that can be executed."
+                }
+            },
+            
+            "required": ["reasoning", "transformation_type", "transformation_rule"],
+            "additionalProperties": False
+        }
 
         llm_kwargs = {
             "model": os.getenv("INTABULAR_STRATEGY_MODEL", "gpt-4o"),
-            "messages": [{"role": "user", "content": prompt_merge}],
+            "messages": [{"role": "user", "content": prompt_merge.format(
+                target_purpose=target_config.purpose,
+                target_column_info=target_config.get_interpretable_column_information(target_col),
+                source_columns=json.dumps(dataframe_analysis.dataframe_column_analysis, indent=2)
+            )}],
             "response_format": {
                 "type": "json_schema",
                 "json_schema": {
                     "name": "descriptive_column_mapping",
-                    "schema": {
-                        "type": "object",
-                        "properties": {
-                            "transformation_type": {
-                                "type": "string",
-                                "enum": ["format", "llm_format", "none"],
-                            },
-                            "reasoning": {"type": "string"},
-                            "transformation_rule": {"type": "string"},
-                        },
-                        "required": ["transformation_type", "reasoning", "transformation_rule"],
-                        "additionalProperties": False,
-                    },
+                    "schema": response_schema
                 },
             },
             "temperature": 0.1,

@@ -237,21 +237,6 @@ class DataframeAnalyzer:
             "completeness": float(series.count() / len(series)) if len(series) > 0 else 0.0
         }
         
-        # Simple schema - just identifier vs text
-        response_schema = {
-            "type": "object",
-            "properties": {
-                "data_type": {
-                    "type": "string",
-                    "enum": ["identifier", "text"]
-                },
-                "purpose": {"type": "string"},
-                "reasoning": {"type": "string"}
-            },
-            "required": ["data_type", "purpose", "reasoning"],
-            "additionalProperties": False
-        }
-        
         # Clean sample values to handle multiline content
         cleaned_samples = [
             str(val).replace('\n', ' ').replace('\r', ' ') 
@@ -260,30 +245,77 @@ class DataframeAnalyzer:
         ]
 
         prompt = textwrap.dedent(f"""
-            Classify this Dataframe column as either "identifier" or "text":
+            You are a data analyst. The user wants to ingest a dataframe into an existing database. To do that you must analyze a particular column of the incoming dataframe and determine multiple things about it.
             
-            COLUMN NAME: {col_name}
-            SAMPLE VALUES (newlines removed): {cleaned_samples}
-            COLUMN STATISTICS: {stats}
+            Incoming column name: {col_name}
+            Here are the first few non-null values: {cleaned_samples}
+            Here are some basic statistics about the column: {stats}
             
-            CLASSIFICATION RULES:
-            - "identifier": Names, emails, phone numbers, IDs, websites, addresses, companies, titles, categories, dates, numbers
-            - "text": Free-form text content like descriptions, notes, comments, explanations, statements, etc.
-            
-            Data should be classified as "identifier" unless it's clearly free-form text content.
-            
-            Please provide:
-            1. Your classification ("identifier" or "text")
-            2. A single sentence explaining what this column represents (purpose)
-            3. Brief reasoning for your classification
-            
-            Example purpose descriptions:
-            - "Person's full name for identification"
-            - "Email address for contact information"
-            - "Company name where person works"
-            - "Detailed product description or review text"
-            - "Customer feedback comments"
+            Classify according to the schema requirements.
         """).strip()
+        
+        # Enhanced schema with embedded rules and guidance
+        response_schema = {
+            "type": "object",
+            
+            "properties": {
+                "reasoning": {
+                    "type": "string",
+                    "title": "Classification Reasoning",
+                    "description": "Brief explanation of why this classification was chosen based on content structure and usage",
+                    "minLength": 15,
+                    "maxLength": 200
+                },
+                
+                "data_type": {
+                    "type": "string", 
+                    "enum": ["identifier", "text"],
+                    "title": "Column Classification",
+                    "description": "identifier: structured references (names, emails, phones, IDs, websites, addresses, companies, titles, categories, dates, numbers) | text: free-form content (descriptions, notes, comments, explanations, statements)",
+                    "$comment": "Default to 'identifier' unless clearly free-form text content"
+                },
+                
+                "purpose": {
+                    "type": "string",
+                    "title": "Column Purpose",  
+                    "description": "Explanation how the information of this column does or would contribute to the purpose of the database",
+                    "examples": [
+                        "Primary email address used for contacting customers and managing communication preferences",
+                        "Product identifier used for inventory tracking and sales reporting in e-commerce system", 
+                        "Customer feedback content used for sentiment analysis and product improvement insights",
+                        "Unique identifier for employees used in HR management and payroll processing",
+                        "Purchase value used for financial reporting and customer spending analysis",
+                        "Clinical observations used for patient care coordination and treatment planning",
+                        "Educational content identifier used for student enrollment and academic tracking"
+                    ],
+                    "pattern": "^[A-Z].*[^.]$|^[A-Z].*\\.$",
+                    "minLength": 10,
+                    "maxLength": 150
+                }
+            },
+            
+            "required": ["data_type", "purpose", "reasoning"],
+            "additionalProperties": False,
+            
+            # Conditional validation based on classification
+            "if": {
+                "properties": {"data_type": {"const": "identifier"}}
+            },
+            "then": {
+                "properties": {
+                    "purpose": {
+                        "description": "Should describe how this identifier is used for recognition, categorization, or reference"
+                    }
+                }
+            },
+            "else": {
+                "properties": {
+                    "purpose": {
+                        "description": "Should describe the narrative or descriptive content and its business purpose"
+                    }
+                }
+            }
+        }
         
         try:
             llm_kwargs = {
