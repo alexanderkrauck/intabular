@@ -10,7 +10,7 @@ from .core.analyzer import UnclearAssumptionsException
 from .core.strategy import DataframeIngestionStrategy
 from .core.processor import DataframeIngestionProcessor
 from .core.logging_config import setup_logging, get_logger
-from .main import run_ingestion_pipeline, create_config, setup_openai_client
+from .main import run_ingestion_pipeline, create_config, setup_llm_client
 
 # Set up default logging configuration when package is imported
 _log_file = os.getenv('INTABULAR_LOG_FILE')
@@ -34,7 +34,7 @@ __all__ = [
     "DataframeIngestionProcessor",
     "run_ingestion_pipeline",
     "create_config",
-    "setup_openai_client",
+    "setup_llm_client",
     "setup_logging",
     "get_logger"
 ] 

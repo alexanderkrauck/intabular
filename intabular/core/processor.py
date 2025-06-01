@@ -5,14 +5,16 @@ Simple entity-focused CSV ingestion processor.
 import json
 import re
 import ast
+import os
 import numpy as np
 import pandas as pd
-from typing import Dict, Any, List, Tuple, Optional, Union
-from pathlib import Path
+from typing import Dict, Any, Tuple, Optional
 from openai import OpenAI
+from pathlib import Path
 
 from intabular.core.config import GatekeeperConfig
 from .logging_config import get_logger
+from .llm_logger import log_llm_call
 
 SAFE_NAMESPACE = {
             're': re,
@@ -238,12 +240,12 @@ class DataframeIngestionProcessor:
             Return only the transformed value, nothing else.
             """
             
-            response = self.client.chat.completions.create(
-                model="gpt-4o-mini",
+            response = log_llm_call(lambda: self.client.chat.completions.create(
+                model=os.getenv('INTABULAR_PROCESSOR_MODEL', 'gpt-4o-mini'),
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.1,
                 max_tokens=500
-            )
+            ))
             
             result = response.choices[0].message.content.strip()
             self.logger.debug(f"LLM transformation result for {target_column_name}: {result}")
@@ -258,7 +260,7 @@ class DataframeIngestionProcessor:
     def execute_ingestion(self, source_df: pd.DataFrame, target_df: pd.DataFrame, strategy, target_config: GatekeeperConfig, general_ingestion_analysis: Dict[str, Any]) -> pd.DataFrame:
         """Execute entity-focused ingestion with identity-based merging"""
         
-        self.logger.info("🔀 Executing entity-focused ingestion...")
+        self.logger.info("Executing entity-focused ingestion...")
         
         # Extract mappings from strategy
         no_merge_mappings = strategy.no_merge_column_mappings
@@ -271,9 +273,9 @@ class DataframeIngestionProcessor:
         if not entity_mappings:
             raise ValueError("No entity mappings found, but entity columns are required for ingestion for now")
         
-        self.logger.info(f"📊 Processing {len(source_df)} source rows against {len(target_df)} target rows")
-        self.logger.info(f"🎯 Entity columns: {list(entity_mappings.keys())}")
-        self.logger.info(f"📝 Merge columns: {list(merge_mappings.keys())}")
+        self.logger.info(f"Processing {len(source_df)} source rows against {len(target_df)} target rows")
+        self.logger.info(f"Entity columns: {list(entity_mappings.keys())}")
+        self.logger.info(f"Merge columns: {list(merge_mappings.keys())}")
         
         # Process each source row: merge or add #TODO: possibly reconsider copying
         target_df = target_df.copy()
@@ -301,7 +303,7 @@ class DataframeIngestionProcessor:
                 target_df = self._add_row(target_df, source_data, entity_values, merge_mappings, target_config, general_ingestion_analysis)
                 added_count += 1
         
-        self.logger.info(f"✅ Complete: {merged_count} merged, {added_count} added, {len(target_df)} total rows")
+        self.logger.info(f"Complete: {merged_count} merged, {added_count} added, {len(target_df)} total rows")
         return target_df
     
     def _transform_entity_fields(self, source_data: Dict[str, Any], entity_mappings: Dict[str, Dict[str, Any]], target_config: GatekeeperConfig, general_ingestion_analysis: Dict[str, Any]) -> Dict[str, str]:

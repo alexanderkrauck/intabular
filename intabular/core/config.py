@@ -4,7 +4,7 @@ Configuration classes for gatekeeper schema and policies.
 
 import yaml
 from pathlib import Path
-from typing import Union, List, Dict, Any
+from typing import List, Dict
 from .logging_config import get_logger
 
 
@@ -110,13 +110,13 @@ class GatekeeperConfig:
             with open(filename, 'w') as f:
                 yaml.dump(config_data, f, default_flow_style=False, sort_keys=False)
             
-            self.logger.info(f"✅ Configuration saved successfully",
-                           extra={
-                               'filename': filename,
-                               'purpose': self.purpose,
-                               'column_count': len(self.get_enrichment_column_names()),
-                               'sample_rows': self.sample_rows
-                           })
+            self.logger.info("Configuration saved successfully",
+                extra={
+                    'target_file': filename,
+                    'purpose_length': len(self.purpose),
+                    'columns_count': len(self.get_enrichment_column_names())
+                }
+            )
         except Exception as e:
             self.logger.error(f"Failed to save configuration to {filename}: {e}")
             raise
@@ -144,10 +144,10 @@ class GatekeeperConfig:
                 sample_rows=data.get('sample_rows', 5)  # Default to 5 if not specified
             )
             
-            logger.info(f"✅ Configuration loaded successfully",
+            logger.info("Configuration loaded successfully",
                        extra={
                            'config_file': filename,
-                           'purpose': config.purpose,
+                           'purpose_length': len(config.purpose),
                            'column_count': len(config.get_enrichment_column_names()),
                            'sample_rows': config.sample_rows
                        })

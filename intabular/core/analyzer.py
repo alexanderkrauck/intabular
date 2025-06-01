@@ -4,14 +4,16 @@ Simplified Dataframe analysis for informed column understanding.
 
 import json
 import time
+import os
 import pandas as pd
 from pathlib import Path
 from typing import Dict, Any, List
 from openai import OpenAI
 
 from intabular.core.config import GatekeeperConfig
-from .logging_config import get_logger, log_prompt_response
+from .logging_config import get_logger
 from .utils import parallel_map
+from .llm_logger import log_llm_call
 
 
 class DataframeAnalysis:
@@ -51,7 +53,7 @@ class DataframeAnalyzer:
         This does inplace modifications to the dataframe.
         """
         
-        self.logger.info(f"📊 Starting simplified Dataframe analysis for DataFrame")
+        self.logger.info("Starting dataframe analysis")
         
         # Set default additional_info if not provided
         if additional_info is None:
@@ -68,7 +70,7 @@ class DataframeAnalyzer:
                 empty_cols.append(col)
         
         if empty_cols:
-            self.logger.info(f"🗑️ Removing {len(empty_cols)} empty columns: {empty_cols}")
+            self.logger.info(f"Removing {len(empty_cols)} empty columns: {empty_cols}")
             df.drop(columns=empty_cols, inplace=True)
         
         # Modify column names to be python style (lowercase with underscores and no special characters)
@@ -77,9 +79,8 @@ class DataframeAnalyzer:
         # Analyze Dataframe structure and semantic purpose with LLM
         df_analysis = self._analyze_dataframe_with_llm(df, additional_info)
         
-        self.logger.info(f"📈 DF dimensions: {len(df)} rows × {len(df.columns)} columns")
-        self.logger.info(f"🔍 Using {self.sample_rows} sample rows for semantic analysis")
-        self.logger.info(f"🎯 Semantic purpose: {df_analysis.get('semantic_purpose', 'Unknown')}")
+        self.logger.info(f"DataFrame: {len(df)} rows × {len(df.columns)} columns")
+        self.logger.info(f"Purpose: {df_analysis.get('semantic_purpose', 'Unknown')}")
         
         # Analyze individual columns in parallel
         column_results = parallel_map(
@@ -123,7 +124,7 @@ class DataframeAnalyzer:
                 assumption_type="column_headers"
             )
         
-        self.logger.debug(f"✅ Basic structure validated for DataFrame")
+        self.logger.debug("Basic structure validated")
     
     def _analyze_dataframe_with_llm(self, df: pd.DataFrame, additional_info: str) -> dict:
         """Use LLM to analyze DF structure and semantic purpose by examining first two rows"""
@@ -174,11 +175,9 @@ class DataframeAnalyzer:
             
             Base your analysis on the column names (if headers exist) and data patterns you observe.
             """
-            
-            start_time = time.time()
-            
-            response = self.client.chat.completions.create(
-                model="gpt-4o",
+                        
+            response = log_llm_call(lambda: self.client.chat.completions.create(
+                model=os.getenv("INTABULAR_STRATEGY_MODEL", "gpt-4o"),
                 messages=[{"role": "user", "content": prompt}],
                 response_format={
                     "type": "json_schema",
@@ -188,16 +187,9 @@ class DataframeAnalyzer:
                     }
                 },
                 temperature=0.1
-            )
+            ))
             
-            duration = time.time() - start_time
             response_content = response.choices[0].message.content
-            
-            # Log the prompt and response
-            log_prompt_response(
-                self.logger, prompt, response_content,
-                model="gpt-4o-mini", duration=duration
-            )
             
             result = json.loads(response_content)
             
@@ -211,10 +203,7 @@ class DataframeAnalyzer:
                     assumption_type="column_headers"
                 )
             
-            self.logger.info(f"🔍 DF Analysis for DataFrame:")
-            self.logger.info(f"  📋 Has headers: {result.get('has_header', False)}")
-            self.logger.info(f"  🎯 Purpose: {result.get('semantic_purpose', 'Unknown')}")
-            self.logger.info(f"  💭 Reasoning: {result.get('reasoning', '')}")
+            self.logger.debug(f"DataFrame analysis complete: {result.get('semantic_purpose', 'Unknown')}")
             
             return result
             
@@ -222,7 +211,7 @@ class DataframeAnalyzer:
             # Re-raise UnclearAssumptionsException as-is
             raise
         except Exception as e:
-            self.logger.error(f"❌ DF analysis failed for DataFrame: {e}")
+            self.logger.error(f"DataFrame analysis failed: {e}")
             # Fallback: assume it has headers and is unknown type
             return {
                 "has_header": True,
@@ -292,11 +281,9 @@ class DataframeAnalyzer:
         - "Customer feedback comments"
         """
         
-        start_time = time.time()
-        
         try:
-            response = self.client.chat.completions.create(
-                model="gpt-4o",
+            response = log_llm_call(lambda: self.client.chat.completions.create(
+                model=os.getenv("INTABULAR_PROCESSOR_MODEL", "gpt-4o-mini"),
                 messages=[{"role": "user", "content": prompt}],
                 response_format={
                     "type": "json_schema",
@@ -306,26 +293,19 @@ class DataframeAnalyzer:
                     }
                 },
                 temperature=0.1
-            )
+            ))
             
-            duration = time.time() - start_time
             response_content = response.choices[0].message.content
-            
-            # Log the prompt and response
-            log_prompt_response(
-                self.logger, prompt, response_content,
-                model="gpt-4o-mini", duration=duration
-            )
             
             result = json.loads(response_content)
             result.update(stats)  # Add statistics to result
             
-            self.logger.info(f"✅ {col_name}: {result.get('data_type', 'unknown')} - {result.get('purpose', 'No purpose provided')}")
+            self.logger.debug(f"{col_name}: {result.get('data_type', 'unknown')} - {result.get('purpose', 'No purpose provided')}")
             
             return result
             
         except Exception as e:
-            self.logger.error(f"❌ {col_name}: Classification failed - {e}")
+            self.logger.error(f"{col_name}: Classification failed - {e}")
             raise e # We don't want to fall back to a default analysis so we re-raise the error. This whole thing does not make sense without LLMs.
     
 

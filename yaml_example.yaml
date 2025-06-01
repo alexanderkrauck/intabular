@@ -35,15 +35,15 @@ enrichment_columns:
     is_entity_identifier: true
     identity_indication: 0.0
   notes:
-    description: "Notes about the customer. Keep it short and concise."
+    description: "Notes about the customer. Can be anything really to support the purpose. This is a free-form field."
     supports_purpose_by: "This is necessary for the purpose since we need to know more personal information about the customer to write more personalized emails and sales pitches."
-    is_entity_identifier: true
-    identity_indication: 0.0
-  enrichment_platforms:
-    description: "Platforms used to enrich the customer data. It should be a dictionary with the platform name, date of enrichment, URL of the enrichment, and the full data that was obtained there in raw. This should not be parsed by the AI, but rather stored as is."
-    supports_purpose_by: "This is necessary for the purpose since we need to know what information we already ingested to this customer entry."
     is_entity_identifier: false
     identity_indication: 0.0
+  # enrichment_platforms:
+  #   description: "Platforms used to enrich the customer data. It should be a dictionary with the platform name, date of enrichment, URL of the enrichment, and the full data that was obtained there in raw. This should not be parsed by the AI, but rather stored as is."
+  #   supports_purpose_by: "This is necessary for the purpose since we need to know what information we already ingested to this customer entry."
+  #   is_entity_identifier: false
+  #   identity_indication: 0.0
 
 
 purpose: >

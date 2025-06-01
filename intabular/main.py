@@ -17,26 +17,49 @@ from intabular.core.processor import DataframeIngestionProcessor
 from intabular.core.logging_config import setup_logging, get_logger
 
 
-def setup_openai_client() -> OpenAI:
-    """Initialize OpenAI client with API key validation"""
+def setup_llm_client() -> OpenAI:
+    """Initialize LLM client with support for custom providers and configurations"""
     logger = get_logger('main')
     
+    # Get API key
     api_key = os.getenv('OPENAI_API_KEY')
     if not api_key:
         logger.critical("OPENAI_API_KEY environment variable not set")
         raise ValueError("OPENAI_API_KEY environment variable is required")
     
-    client = OpenAI(api_key=api_key)
+    # Get custom base URL if specified (for alternative LLM providers)
+    base_url = os.getenv('INTABULAR_BASE_URL')
+    
+    # Get organization if specified
+    organization = os.getenv('INTABULAR_ORGANIZATION')
+    
+    # Initialize client with custom parameters
+    client_kwargs = {'api_key': api_key}
+    if base_url:
+        client_kwargs['base_url'] = base_url
+        logger.info(f"Using custom LLM endpoint: {base_url}")
+    if organization:
+        client_kwargs['organization'] = organization
+        logger.info(f"Using organization: {organization}")
+    
+    client = OpenAI(**client_kwargs)
+    
+    # Log model configuration
+    strategy_model = os.getenv('INTABULAR_STRATEGY_MODEL', 'gpt-4o')
+    processor_model = os.getenv('INTABULAR_PROCESSOR_MODEL', 'gpt-4o-mini')
+    logger.info(f"Strategy model: {strategy_model}")
+    logger.info(f"Processor model: {processor_model}")
     
     # Test the connection
     try:
         client.models.list()
-        logger.info("✅ OpenAI API connection verified")
+        provider_name = "Custom LLM Provider" if base_url else "OpenAI"
+        logger.info(f"{provider_name} API connection verified")
     except Exception as e:
-        logger.error(f"❌ OpenAI API connection failed: {e}")
+        logger.error(f"LLM API connection failed: {e}")
         raise
     
-    logger.info("✅ Using OpenAI LLM for intelligent data ingestion")
+    logger.info("LLM client initialized")
     return client
 
 
@@ -45,16 +68,13 @@ def run_ingestion_pipeline(yaml_config_file: str, csv_to_ingest: str) -> pd.Data
     
     logger = get_logger('main')
     
-    logger.info("🚀 Starting intelligent CSV ingestion pipeline")
-    logger.info(f"📋 Config: {yaml_config_file}")
-    logger.info(f"📄 Input CSV: {csv_to_ingest}")
+    logger.info(f"Starting ingestion pipeline: {csv_to_ingest} -> {yaml_config_file}")
     
     # Initialize components
-    client = setup_openai_client()
-        # Load target configuration
-    logger.info("📝 Loading target schema configuration...")
-    target_config = GatekeeperConfig.from_yaml(yaml_config_file)
+    client = setup_llm_client()
     
+    # Load target configuration
+    target_config = GatekeeperConfig.from_yaml(yaml_config_file)
     
     analyzer = DataframeAnalyzer(client, target_config)
     strategy_creator = DataframeIngestionStrategy(client)
@@ -62,8 +82,7 @@ def run_ingestion_pipeline(yaml_config_file: str, csv_to_ingest: str) -> pd.Data
     
 
     
-    logger.info(f"🎯 Purpose: {target_config.purpose[:80]}...")
-    logger.info(f"📊 Target columns: {len(target_config.get_enrichment_column_names())}")
+    logger.info(f"Target: {target_config.purpose[:80]}... ({len(target_config.get_enrichment_column_names())} columns)")
         
 
     # Read the CSV to ingest and the target table
@@ -71,16 +90,16 @@ def run_ingestion_pipeline(yaml_config_file: str, csv_to_ingest: str) -> pd.Data
     df_to_enrich = pd.read_csv(target_config.target_file_path) if Path(target_config.target_file_path).exists() else pd.DataFrame()
     
     # Analyze the CSV
-    logger.info("📊 Analyzing CSV...")
+    logger.info("Analyzing CSV...")
     df_analysis = analyzer.analyze_dataframe_structure(df_to_ingest)
     
     
     # Create intelligent strategy
-    logger.info("🧠 Creating intelligent field-mapping strategy...")
+    logger.info("Creating field-mapping strategy...")
     strategy = strategy_creator.create_ingestion_strategy(target_config, df_analysis)
     
     # Execute ingestion
-    logger.info("🔀 Executing intelligent field-by-field ingestion...")
+    logger.info("Executing ingestion...")
     ingested_df = processor.execute_ingestion(
     df_to_ingest,
     df_to_enrich,
@@ -90,11 +109,10 @@ def run_ingestion_pipeline(yaml_config_file: str, csv_to_ingest: str) -> pd.Data
     )
     
     # Save results
-    logger.info(f"💾 Saving results to: {target_config.target_file_path}")
     ingested_df.to_csv(target_config.target_file_path, index=False)
     
     # Final summary
-    logger.info("\n🎉 Ingestion Pipeline Complete!")
+    logger.info(f"Ingestion complete: {len(ingested_df)} rows saved to {target_config.target_file_path}")
     
     return ingested_df
 
@@ -105,14 +123,14 @@ def infer_config_from_table(table_path: str, purpose: str) -> GatekeeperConfig:
     logger = get_logger('main')
     
     if Path(table_path).exists():
-        logger.info(f"📋 Inferring schema from existing table: {table_path}")
+        logger.info(f"Inferring schema from existing table: {table_path}")
         df = pd.read_csv(table_path)
         enrichment_columns = list(df.columns)
-        logger.info(f"📊 Found {len(enrichment_columns)} columns")
+        logger.info(f"Found {len(enrichment_columns)} columns")
     else:
         # Default enrichment columns
         enrichment_columns = ["email", "first_name", "last_name", "company", "title", "phone", "website"]
-        logger.warning(f"⚠️  Table not found, using default columns: {enrichment_columns}")
+        logger.warning(f"Table not found, using default columns: {enrichment_columns}")
     
     return GatekeeperConfig(
         purpose=purpose,
@@ -130,9 +148,7 @@ def create_config(table_path: str, purpose: str, output_yaml: Optional[str] = No
     yaml_file = output_yaml or f"{Path(table_path).stem}_config.yaml"
     config.to_yaml(yaml_file)
     
-    logger.info(f"✅ Configuration saved to: {yaml_file}")
-    logger.info(f"🎯 Purpose: {purpose}")
-    logger.info(f"📊 Columns: {len(config.get_enrichment_column_names())}")
+    logger.info(f"Configuration saved: {yaml_file} ({len(config.get_enrichment_column_names())} columns)")
     
     return yaml_file
 
@@ -175,10 +191,10 @@ def handle_ingestion_command(args):
     
     try:
         result = run_ingestion_pipeline(yaml_config, csv_file, output_file)
-        logger.info(f"\n🎉 Successfully ingested {len(result)} rows!")
+        logger.info(f"Successfully ingested {len(result)} rows")
         
     except Exception as e:
-        logger.error(f"❌ Error: {e}")
+        logger.error(f"Error: {e}")
 
 
 def main():

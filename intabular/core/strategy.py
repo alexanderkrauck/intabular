@@ -5,13 +5,15 @@ Entity-aware ingestion strategy creation for intelligent CSV mapping and merging
 import json
 import time
 import re
+import os
 from typing import Dict, Any, List, Tuple, Optional
 from openai import OpenAI
 from intabular.core.analyzer import DataframeAnalysis
 from intabular.core.processor import SAFE_NAMESPACE
 from .config import GatekeeperConfig
-from .logging_config import get_logger, log_prompt_response, log_strategy_creation
+from .logging_config import get_logger
 from .utils import parallel_map
+from .llm_logger import log_llm_call
 
 
 class DataframeIngestionStrategyResult:
@@ -104,8 +106,8 @@ class DataframeIngestionStrategy:
         SAFE_NAMESPACE functions if using transformation rules in python syntax:
         {SAFE_NAMESPACE.keys()}"""
 
-        response = self.client.chat.completions.create(
-            model="gpt-4o-mini",
+        response = log_llm_call(lambda: self.client.chat.completions.create(
+            model=os.getenv("INTABULAR_STRATEGY_MODEL", "gpt-4o"),
             messages=[{"role": "user", "content": prompt}],
             response_format={
                 "type": "json_schema",
@@ -127,7 +129,7 @@ class DataframeIngestionStrategy:
                 },
             },
             temperature=0.1,
-        )
+        ))
         
         result = json.loads(response.choices[0].message.content)
         
@@ -173,8 +175,8 @@ class DataframeIngestionStrategy:
         {SAFE_NAMESPACE.keys()}"""
         
 
-        response = self.client.chat.completions.create(
-            model="gpt-4o-mini",
+        response = log_llm_call(lambda: self.client.chat.completions.create(
+            model=os.getenv("INTABULAR_STRATEGY_MODEL", "gpt-4o"),
             messages=[{"role": "user", "content": prompt_merge}],
             response_format={
                 "type": "json_schema",
@@ -196,6 +198,6 @@ class DataframeIngestionStrategy:
                 },
             },
             temperature=0.1,
-        )
+        ))
 
         return json.loads(response.choices[0].message.content)
