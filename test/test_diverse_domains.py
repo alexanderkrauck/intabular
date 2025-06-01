@@ -43,7 +43,7 @@ class TestIndustrialData:
     def test_temperature_unit_conversion(self, mock_processor):
         """Test temperature unit conversions"""
         test_cases = [
-            ({'temp_f': '75.2'}, 'str(round((float(temp_f) - 32) * 5/9, 1))', '23.9'),  # F to C
+            ({'temp_f': '75.2'}, 'str(round((float(temp_f) - 32) * 5/9, 1))', '24.0'),  # F to C
             ({'temp_k': '296.15'}, 'str(round(float(temp_k) - 273.15, 1))', '23.0'),    # K to C
             ({'temp_c': '23.5'}, 'temp_c', '23.5')  # Already in Celsius
         ]

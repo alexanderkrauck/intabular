@@ -110,7 +110,7 @@ class TestEdgeCases:
         """Test distinction between empty strings and None values"""
         test_cases = [
             ({'field': ''}, 'field if field else "empty"', 'empty'),
-            ({'field': None}, 'field if field else "none"', ''),  # None becomes empty string
+            ({'field': None}, 'field if field else "none"', 'none'),  # None becomes empty string, then rule applies
             ({'field': '  '}, 'field.strip() if field.strip() else "whitespace"', 'whitespace')
         ]
         
@@ -244,6 +244,9 @@ class TestEdgeCases:
         mock_response = Mock()
         mock_response.choices = [Mock()]
         mock_response.choices[0].message.content = "Processed long text"
+        
+        # Clear any existing side_effect and set return_value
+        mock_processor.client.chat.completions.create.side_effect = None
         mock_processor.client.chat.completions.create.return_value = mock_response
         
         # Should handle long text without errors

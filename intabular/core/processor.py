@@ -70,7 +70,7 @@ class DataframeIngestionProcessor:
         
         # Add source column data - convert to strings and handle None values
         for col_name, value in source_data.items():
-            if value is None:
+            if value is None or pd.isna(value): #this is a heuristic to handle None values and could be an issue if the string was actually "nan"
                 namespace[col_name] = ""
             elif isinstance(value, str):
                 namespace[col_name] = value

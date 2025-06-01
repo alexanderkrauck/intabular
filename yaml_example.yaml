@@ -30,7 +30,7 @@ enrichment_columns:
     is_entity_identifier: true
     identity_indication: 0.6
   location:
-    description: "Location of the customer in a sentence"
+    description: "Location of the customer in the format 'city, state, country' all in lowercase. If the more narrow location is not available, use the broader location only."
     supports_purpose_by: "This is necessary for the purpose since we need to know the location of the customer to know if they are in the target market."
     is_entity_identifier: true
     identity_indication: 0.0
