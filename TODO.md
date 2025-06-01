@@ -1,42 +1,58 @@
-# TODOs
+# TODOs - Refocused on Core Value Proposition
 
-## Implement First (Basic/Foundational)
+**Core Vision**: Intent-driven ingestion of arbitrary data into coherent formats through intelligent schema automation.
 
-1. need to intelligently add new cols if reasonable
-2. need to kinda analyze the pipeline to find improvements in prompt etc
-3. write at least small-ish test suite for it where I possibly also evaluate its robustness for various data inputs etc.
-4. generalize it to different LLM providers; possible open source ones
-5. maybe generalize it to different data formats (csv, mysql, whatever)
-6. implement "hooks" for user feedback on assumption error (that implies dry run mode)
-7. allow for smart retrieval by query using in prosa (maybe use some other existing mcp stuffs for that as I think that exists)
-8. allow for self-ingest or at least analyze it as it could have a lot of potential.
-9. add (and design) the "data-trace" architecture. That means it must be kind of traceable where the data for each row came from (that implies rollbacks)
-10. write stuff to create the entire intention schema from prompting
-11. need to publish to to pypi
-12. write some social media post about it
-13. write paper or so about it (theory + impact + use cases)
+## Essential (Core Value Proposition)
 
-## Advanced
+### 1. Automated Schema Intelligence
 
-14. allow for large files (memory handling etc)
-15. allow for schema modification using prompting (could work using simply an ingestion of the existing data in the new schema)
-16. allow for nested structures.
-17. generalize gatekeeper architecture
+- **Auto-generate schemas from data**: When no schema exists, automatically create one by analyzing ingested data patterns and inferring business context
+- **Intelligent schema creation from intent**: Enhance current prompt-based schema generation to be more sophisticated and business-context aware
+- **Schema evolution**: Allow schemas to intelligently adapt when new data reveals missing but valuable dimensions
 
-## Advanced Very
+### 2. Enhanced Intent-Driven Ingestion
 
-18. implement semantic retrieval models
-19. implement trust and relevance storing
+- **Improve ingestion pipeline analysis**: Better analysis of the ingestion process to identify and fix prompt/logic bottlenecks
+- **Intelligent column addition**: Automatically suggest and add new columns when incoming data contains valuable information not captured by current schema
+- **Robust data input evaluation**: Comprehensive test suite covering various data formats, edge cases, and robustness scenarios
 
-## Advanced Very Very
+### 3. Quality & Reliability
 
-20. implement generalized information storage from this architecture
-21. including decay mechanisms for data
+- **User feedback hooks**: Implement dry-run mode with user confirmation for assumption validation before data changes
+- **Data trace architecture**: Complete traceability of data origins for each row, enabling rollbacks and audit trails
+- **Error handling & validation**: Robust validation with clear error reporting and recovery mechanisms
 
-## Very Very Very Very Advanced
+## Important (Foundation)
 
-22. implement self refinement and incremental thinking
+### 4. Multi-Provider Support
 
-## Implement Last (AGI Level Advanced)
+- **LLM provider abstraction**: Support for different LLM providers including open-source models (but keep simple - avoid over-engineering)
 
-23. implement robust generalized learning
+### 5. Publishing & Documentation
+
+- **PyPI publication**: Package and publish to PyPI for easy installation
+- **Clean up codebase**: Remove outdated README sections, unused code, check for TODOs, ensure everything runs smoothly
+
+## Vision & Theory
+
+### 6. Intelligence & Agency Article
+
+Write an article exploring:
+
+- **The concept of intelligence in data systems**
+- **Servitude of agents and representation in humans vs evolution**
+- **Implications for AGI development**
+- **How intent-driven data systems relate to broader intelligence concepts**
+
+## Explicitly NOT Pursuing for now (Let Other Frameworks Handle)
+
+❌ **Retrieval systems** - MCP and other frameworks handle this  
+❌ **Complex data format support** (MySQL, etc.) - Standard ETL tools exist  
+❌ **Large file memory handling** - Not core differentiator  
+❌ **Nested structures** - Adds complexity without core value  
+❌ **Semantic retrieval models** - Outside core focus  
+❌ **Generalized learning/AGI features** - Too ambitious for this framework  
+
+---
+
+**Focus Principle**: Every feature must directly support "intent-driven ingestion of arbitrary data into coherent formats" or automated schema intelligence. If other frameworks already solve it well, we don't build it.
