@@ -123,20 +123,20 @@ class TestPerfectMatching:
     
     def test_data_types_preserved(self, processor, customer_crm_config):
         """Test that data types are properly handled during transformation"""
-        test_data = {
-            'email': ['test@example.com'],
-            'full_name': ['Test User'],
-            'deal_value': [50000],  # Numeric value
-            'notes': ['Test notes']
+        # Test with scalar values (not lists)
+        test_data_scalar = {
+            'email': 'test@example.com',
+            'full_name': 'Test User',
+            'deal_value': 50000,  # Numeric value - scalar not list
+            'notes': 'Test notes'
         }
-        test_df = pd.DataFrame(test_data)
         
         # Test execute_transformation directly
-        result = processor.execute_transformation('deal_value', test_data)
+        result = processor.execute_transformation('deal_value', test_data_scalar)
         assert result == '50000', "Numeric values should be converted to strings"
         
         # Test with None values
-        test_data_with_none = test_data.copy()
+        test_data_with_none = test_data_scalar.copy()
         test_data_with_none['deal_value'] = None
         result_none = processor.execute_transformation('deal_value', test_data_with_none)
         assert result_none == '', "None values should become empty strings" 

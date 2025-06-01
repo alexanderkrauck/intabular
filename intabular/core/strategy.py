@@ -90,6 +90,10 @@ class DataframeIngestionStrategy:
             These are columns used for entity matching and should never merge content - they either replace or keep existing values.
             Your task is to analyze the incoming columns and determine how to transform them into the target column format.
             
+            IMPORTANT: Entity identifier columns are critical for database operations and should ALWAYS have a transformation.
+            If the source data appears to be a perfect match, use 'format' with a simple passthrough rule rather than 'none'.
+            Only use 'none' if there is absolutely no source data that could be relevant to this entity column.
+            
             The general purpose of the database is: {target_purpose}
             The details about the target column we are transforming into is: {target_column_info}
             
@@ -119,9 +123,9 @@ class DataframeIngestionStrategy:
                     "type": "string",
                     "enum": ["format", "llm_format", "none"],
                     "title": "Transformation Method",
-                    "description": "format: Apply deterministic Python transformation rules for normalization | llm_format: Use LLM to directly parse all source columns into target format | none: No suitable source mapping found",
+                    "description": "format: Apply deterministic Python transformation rules for normalization (PREFERRED for entity columns) | llm_format: Use LLM to directly parse all source columns into target format | none: No suitable source mapping found (avoid for entity columns)",
                     "examples": ["format", "llm_format", "none"],
-                    "$comment": "Choose 'format' for deterministic transformations like email normalization, 'llm_format' when complex interpretation of multiple source columns is needed, 'none' when no mapping is possible. For llm_format, the LLM will receive all source column values and types."
+                    "$comment": "For entity identifier columns, strongly prefer 'format' over 'none'. Even if data appears perfect, use a simple passthrough rule like 'column_name' or 'column_name.strip()'. Only use 'none' if absolutely no relevant source data exists. For llm_format, the LLM will receive all source column values and types."
                 },
                 
                 "transformation_rule": {
@@ -134,10 +138,12 @@ class DataframeIngestionStrategy:
                         "re.sub(r'[^\\d]', '', phone)[:10]",
                         "company_name.strip().upper()",
                         "user_id.strip()",
+                        "phone",
+                        "email",
                         "datetime.strptime(date_str, '%Y-%m-%d').strftime('%Y-%m-%d')"
                     ],
                     "minLength": 1,
-                    "$comment": "The transformation rule must normalize the source column into a format that perfectly matches the target column requirements. Only required for 'format' type. For 'llm_format', this field is optional."
+                    "$comment": "The transformation rule must normalize the source column into a format that perfectly matches the target column requirements. For entity columns, prefer simple rules even for apparent perfect matches (e.g., 'phone' instead of no transformation). Only required for 'format' type. For 'llm_format', this field is optional."
                 },
 
                 "llm_source_columns": {

@@ -24,8 +24,13 @@ class TestLLMParsing:
         llm_mappings = [mapping for mapping in all_mappings.values() 
                        if mapping['transformation_type'] == 'llm_format']
         
-        # We expect at least some columns to require LLM parsing
-        assert len(llm_mappings) >= 0, "Complex data should potentially create LLM format strategies"
+        # Complex data should actually create LLM format strategies (not just potentially)
+        assert len(llm_mappings) > 0, "Complex data should create at least one LLM format strategy"
+        
+        # Verify that LLM mappings have proper structure
+        for mapping in llm_mappings:
+            assert 'reasoning' in mapping, "LLM mappings should include reasoning"
+            assert mapping['transformation_type'] == 'llm_format', "Should be llm_format type"
     
     @pytest.mark.no_llm
     def test_llm_source_columns_specification(self, mock_strategy_creator, customer_crm_config):
@@ -56,8 +61,14 @@ class TestLLMParsing:
         # Create strategy
         strategy = mock_strategy_creator.create_ingestion_strategy(customer_crm_config, mock_analysis)
         
-        # Check that strategy was created (even if mocked)
-        assert strategy is not None
+        # Check that strategy was created and contains expected LLM configuration
+        assert strategy is not None, "Strategy should be created"
+        
+        # Verify that the mock was called to create the strategy
+        mock_strategy_creator.client.chat.completions.create.assert_called()
+        
+        # In a real test, we would verify the llm_source_columns were processed correctly
+        # but since this is fully mocked, we can only verify the basic structure exists
     
     @pytest.mark.no_llm
     def test_llm_direct_parsing(self, mock_processor, customer_crm_config):
