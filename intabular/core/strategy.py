@@ -3,10 +3,9 @@ Entity-aware ingestion strategy creation for intelligent CSV mapping and merging
 """
 
 import json
-import time
-import re
 import os
-from typing import Dict, Any, List, Tuple, Optional
+import textwrap
+from typing import Dict, Any
 from openai import OpenAI
 from intabular.core.analyzer import DataframeAnalysis
 from intabular.core.processor import SAFE_NAMESPACE
@@ -84,32 +83,33 @@ class DataframeIngestionStrategy:
 
         self.logger.info(f"Creating no merge column mapping for column {target_col} using dataframe analysis {dataframe_analysis.dataframe_column_analysis}")
 
-        prompt = f"""
-        Create a transformation strategy for columns to be transformed into the target column. That means there are input columns and a target column and the goal is to transform the input columns into the target column if possible.
-        
-        GENERAL PURPOSE OF DATA: {target_config.purpose}
-        TARGET COLUMN INFORMATION:
-        {target_config.get_interpretable_column_information(target_col)}
-        
-        AVAILABLE SOURCE COLUMNS:
-        {json.dumps(dataframe_analysis.dataframe_column_analysis, indent=2)}
-        
-        TRANSFORMATION TYPES:
-        1. "format" - Apply deterministic transformation to normalize the value. Make sure to return rules that perfectly transform the input columns into the target column including all rules that the target column requires.
-           Examples:
-           - "email.strip().lower()" for email normalization
-           - "f'{{first_name.strip().lower()}} {{last_name.strip().lower()}}'" for name combination
-           - "re.sub(r'[^\\d]', '', phone)[:10]" for phone number cleanup
-        2. "llm_format" - Use LLM for complex normalization decisions. Thereby first, the transformation rules are applied and then fed to an LLM to transform the value into the target column.
-        3. "none" - No suitable source mapping found
-        
-        SAFE_NAMESPACE functions if using transformation rules in python syntax:
-        {SAFE_NAMESPACE.keys()}"""
+        prompt = textwrap.dedent(f"""
+            Create a transformation strategy for columns to be transformed into the target column. That means there are input columns and a target column and the goal is to transform the input columns into the target column if possible.
+            
+            GENERAL PURPOSE OF DATA: {target_config.purpose}
+            TARGET COLUMN INFORMATION:
+            {target_config.get_interpretable_column_information(target_col)}
+            
+            AVAILABLE SOURCE COLUMNS:
+            {json.dumps(dataframe_analysis.dataframe_column_analysis, indent=2)}
+            
+            TRANSFORMATION TYPES:
+            1. "format" - Apply deterministic transformation to normalize the value. Make sure to return rules that perfectly transform the input columns into the target column including all rules that the target column requires.
+               Examples:
+               - "email.strip().lower()" for email normalization
+               - "f'{{first_name.strip().lower()}} {{last_name.strip().lower()}}'" for name combination
+               - "re.sub(r'[^\\d]', '', phone)[:10]" for phone number cleanup
+            2. "llm_format" - Use LLM for complex normalization decisions. Thereby first, the transformation rules are applied and then fed to an LLM to transform the value into the target column.
+            3. "none" - No suitable source mapping found
+            
+            SAFE_NAMESPACE functions if using transformation rules in python syntax:
+            {SAFE_NAMESPACE.keys()}
+        """).strip()
 
-        response = log_llm_call(lambda: self.client.chat.completions.create(
-            model=os.getenv("INTABULAR_STRATEGY_MODEL", "gpt-4o"),
-            messages=[{"role": "user", "content": prompt}],
-            response_format={
+        llm_kwargs = {
+            "model": os.getenv("INTABULAR_STRATEGY_MODEL", "gpt-4o"),
+            "messages": [{"role": "user", "content": prompt}],
+            "response_format": {
                 "type": "json_schema",
                 "json_schema": {
                     "name": "entity_column_mapping",
@@ -128,8 +128,13 @@ class DataframeIngestionStrategy:
                     },
                 },
             },
-            temperature=0.1,
-        ))
+            "temperature": 0.1,
+        }
+        
+        response = log_llm_call(
+            lambda: self.client.chat.completions.create(**llm_kwargs),
+            **llm_kwargs
+        )
         
         result = json.loads(response.choices[0].message.content)
         
@@ -147,38 +152,39 @@ class DataframeIngestionStrategy:
     ) -> Dict[str, Any]:
         """Create mapping strategy for descriptive columns - intelligent content merging with existing values"""
 
-        prompt_merge = f"""
-        Create a transformation strategy for a column.
-        
-        GENERAL PURPOSE OF DATA: {target_config.purpose}
-        TARGET COLUMN INFORMATION:
-        {target_config.get_interpretable_column_information(target_col)}
-        
-        AVAILABLE SOURCE COLUMNS:
-        {json.dumps(dataframe_analysis.dataframe_column_analysis, indent=2)}
-        
-        CURRENT COLUMN INFORMATION:
-        You can also in the transformation_rules utilize the value of the target column that we merge into by using "current".
+        prompt_merge = textwrap.dedent(f"""
+            Create a transformation strategy for a column.
+            
+            GENERAL PURPOSE OF DATA: {target_config.purpose}
+            TARGET COLUMN INFORMATION:
+            {target_config.get_interpretable_column_information(target_col)}
+            
+            AVAILABLE SOURCE COLUMNS:
+            {json.dumps(dataframe_analysis.dataframe_column_analysis, indent=2)}
+            
+            CURRENT COLUMN INFORMATION:
+            You can also in the transformation_rules utilize the value of the target column that we merge into by using "current".
 
-        TRANSFORMATION TYPES:
-        1. "format" - Apply deterministic transformation to normalize the value. Make sure to return rules that perfectly transform the input columns into the target column including all rules that the target column requires.
-           Examples:
-           - "email.strip().lower()" for email normalization
-           - "f'{{first_name.strip().lower()}} {{last_name.strip().lower()}}'" for name combination
-           - "re.sub(r'[^\\d]', '', phone)[:10]" for phone number cleanup
-           - "f'Current: {{current}}, Notes: {{notes}}'" for merging of the current value with the notes column.
-           - "notes" for notes column alone without any other columns or modifications.
-        2. "llm_format" - Use LLM for complex normalization decisions. Thereby first, the transformation rules are applied and then fed to an LLM to transform the value into the target column.
-        3. "none" - No suitable source mapping found
-        
-        SAFE_NAMESPACE functions if using transformation rules in python syntax:
-        {SAFE_NAMESPACE.keys()}"""
+            TRANSFORMATION TYPES:
+            1. "format" - Apply deterministic transformation to normalize the value. Make sure to return rules that perfectly transform the input columns into the target column including all rules that the target column requires.
+               Examples:
+               - "email.strip().lower()" for email normalization
+               - "f'{{first_name.strip().lower()}} {{last_name.strip().lower()}}'" for name combination
+               - "re.sub(r'[^\\d]', '', phone)[:10]" for phone number cleanup
+               - "f'Current: {{current}}, Notes: {{notes}}'" for merging of the current value with the notes column.
+               - "notes" for notes column alone without any other columns or modifications.
+            2. "llm_format" - Use LLM for complex normalization decisions. Thereby first, the transformation rules are applied and then fed to an LLM to transform the value into the target column.
+            3. "none" - No suitable source mapping found
+            
+            SAFE_NAMESPACE functions if using transformation rules in python syntax:
+            {SAFE_NAMESPACE.keys()}
+        """).strip()
         
 
-        response = log_llm_call(lambda: self.client.chat.completions.create(
-            model=os.getenv("INTABULAR_STRATEGY_MODEL", "gpt-4o"),
-            messages=[{"role": "user", "content": prompt_merge}],
-            response_format={
+        llm_kwargs = {
+            "model": os.getenv("INTABULAR_STRATEGY_MODEL", "gpt-4o"),
+            "messages": [{"role": "user", "content": prompt_merge}],
+            "response_format": {
                 "type": "json_schema",
                 "json_schema": {
                     "name": "descriptive_column_mapping",
@@ -197,7 +203,12 @@ class DataframeIngestionStrategy:
                     },
                 },
             },
-            temperature=0.1,
-        ))
+            "temperature": 0.1,
+        }
+
+        response = log_llm_call(
+            lambda: self.client.chat.completions.create(**llm_kwargs),
+            **llm_kwargs
+        )
 
         return json.loads(response.choices[0].message.content)

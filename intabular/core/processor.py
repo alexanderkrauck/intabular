@@ -6,11 +6,11 @@ import json
 import re
 import ast
 import os
+import textwrap
 import numpy as np
 import pandas as pd
 from typing import Dict, Any, Tuple, Optional
 from openai import OpenAI
-from pathlib import Path
 
 from intabular.core.config import GatekeeperConfig
 from .logging_config import get_logger
@@ -220,32 +220,37 @@ class DataframeIngestionProcessor:
             column_info = target_config.get_interpretable_column_information(target_column_name)
             
             # Prepare prompt for LLM
-            prompt = f"""
-            We want to map a information from a source to a column in our target table. Transform and normalize the following value for a specific target column.
+            prompt = textwrap.dedent(f"""
+                We want to map a information from a source to a column in our target table. Transform and normalize the following value for a specific target column.
+                
+                GENERAL PURPOSE OF DATA: {target_config.purpose}
+                
+                TARGET COLUMN INFORMATION:
+                {column_info}
+                
+                GENERAL INGESTION ANALYSIS of the incoming table where this new information is from:
+                {json.dumps(general_ingestion_analysis, indent=2)}
+                
+                INTERMEDIATE TRANSFORMATION RESULT: {intermediate_result}
+                
+                CURRENT TARGET VALUE: {current_value if current_value else "None"}
+                
+                Please transform the intermediate result into a value that properly fits the target column requirements.
+                Consider the purpose of the data, the specific column requirements, and the overall ingestion context.
+                Return only the transformed value, nothing else.
+            """).strip()
             
-            GENERAL PURPOSE OF DATA: {target_config.purpose}
+            llm_kwargs = {
+                "model": os.getenv('INTABULAR_PROCESSOR_MODEL', 'gpt-4o-mini'),
+                "messages": [{"role": "user", "content": prompt}],
+                "temperature": 0.1,
+                "max_tokens": 500
+            }
             
-            TARGET COLUMN INFORMATION:
-            {column_info}
-            
-            GENERAL INGESTION ANALYSIS of the incoming table where this new information is from:
-            {json.dumps(general_ingestion_analysis, indent=2)}
-            
-            INTERMEDIATE TRANSFORMATION RESULT: {intermediate_result}
-            
-            CURRENT TARGET VALUE: {current_value if current_value else "None"}
-            
-            Please transform the intermediate result into a value that properly fits the target column requirements.
-            Consider the purpose of the data, the specific column requirements, and the overall ingestion context.
-            Return only the transformed value, nothing else.
-            """
-            
-            response = log_llm_call(lambda: self.client.chat.completions.create(
-                model=os.getenv('INTABULAR_PROCESSOR_MODEL', 'gpt-4o-mini'),
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.1,
-                max_tokens=500
-            ))
+            response = log_llm_call(
+                lambda: self.client.chat.completions.create(**llm_kwargs),
+                **llm_kwargs
+            )
             
             result = response.choices[0].message.content.strip()
             self.logger.debug(f"LLM transformation result for {target_column_name}: {result}")

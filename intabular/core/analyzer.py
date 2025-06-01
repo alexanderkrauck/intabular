@@ -3,11 +3,10 @@ Simplified Dataframe analysis for informed column understanding.
 """
 
 import json
-import time
 import os
+import textwrap
 import pandas as pd
-from pathlib import Path
-from typing import Dict, Any, List
+from typing import Dict, Any
 from openai import OpenAI
 
 from intabular.core.config import GatekeeperConfig
@@ -152,42 +151,47 @@ class DataframeAnalyzer:
                 "additionalProperties": False
             }
             
-            prompt = f"""
-            Analyze this Dataframe to understand both its structure and semantic purpose:
-            
-            FIRST ROW/HEADER: {header}
-            {f"SECOND ROW: {first_row}" if first_row else "ONLY ONE ROW AVAILABLE"}
-            
-            ADDITIONAL CONTEXT (for reference only, not definitive): {additional_info}
-            Note: The additional context above is supplementary information that may provide hints 
-            about the dataframe's purpose, but you should base your analysis primarily on the actual 
-            data structure and content patterns you observe.
-            
-            Please determine:
-            
-            1. HEADER DETECTION: Does the first row contain column headers or actual data/palceholder values?
-               - Headers: descriptive names like ["name", "email", "company", "first_name"]  
-               - Data: actual values like ["John Smith", "john@example.com", "Acme Corp"] or placeholder values like ["1", "2", "3"]
-            
-            2. SEMANTIC PURPOSE: What does this Dataframe represent? Provide a clear, concise description.
-               Examples: "Contact list with names and email addresses", "Employee directory with contact information", 
-               "Customer database with purchase history", "Survey responses about product satisfaction"
-            
-            Base your analysis on the column names (if headers exist) and data patterns you observe.
-            """
+            prompt = textwrap.dedent(f"""
+                Analyze this Dataframe to understand both its structure and semantic purpose:
+                
+                FIRST ROW/HEADER: {header}
+                {f"SECOND ROW: {first_row}" if first_row else "ONLY ONE ROW AVAILABLE"}
+                
+                ADDITIONAL CONTEXT (for reference only, not definitive): {additional_info}
+                Note: The additional context above is supplementary information that may provide hints 
+                about the dataframe's purpose, but you should base your analysis primarily on the actual 
+                data structure and content patterns you observe.
+                
+                Please determine:
+                
+                1. HEADER DETECTION: Does the first row contain column headers or actual data/palceholder values?
+                   - Headers: descriptive names like ["name", "email", "company", "first_name"]  
+                   - Data: actual values like ["John Smith", "john@example.com", "Acme Corp"] or placeholder values like ["1", "2", "3"]
+                
+                2. SEMANTIC PURPOSE: What does this Dataframe represent? Provide a clear, concise description.
+                   Examples: "Contact list with names and email addresses", "Employee directory with contact information", 
+                   "Customer database with purchase history", "Survey responses about product satisfaction"
+                
+                Base your analysis on the column names (if headers exist) and data patterns you observe.
+            """).strip()
                         
-            response = log_llm_call(lambda: self.client.chat.completions.create(
-                model=os.getenv("INTABULAR_STRATEGY_MODEL", "gpt-4o"),
-                messages=[{"role": "user", "content": prompt}],
-                response_format={
+            llm_kwargs = {
+                "model": os.getenv("INTABULAR_STRATEGY_MODEL", "gpt-4o"),
+                "messages": [{"role": "user", "content": prompt}],
+                "response_format": {
                     "type": "json_schema",
                     "json_schema": {
                         "name": "dataframe_analysis",
                         "schema": response_schema
                     }
                 },
-                temperature=0.1
-            ))
+                "temperature": 0.1
+            }
+                        
+            response = log_llm_call(
+                lambda: self.client.chat.completions.create(**llm_kwargs),
+                **llm_kwargs
+            )
             
             response_content = response.choices[0].message.content
             
@@ -255,45 +259,50 @@ class DataframeAnalyzer:
             for val in sample_values
         ]
 
-        prompt = f"""
-        Classify this Dataframe column as either "identifier" or "text":
-        
-        COLUMN NAME: {col_name}
-        SAMPLE VALUES (newlines removed): {cleaned_samples}
-        COLUMN STATISTICS: {stats}
-        
-        CLASSIFICATION RULES:
-        - "identifier": Names, emails, phone numbers, IDs, websites, addresses, companies, titles, categories, dates, numbers
-        - "text": Free-form text content like descriptions, notes, comments, explanations, statements, etc.
-        
-        Data should be classified as "identifier" unless it's clearly free-form text content.
-        
-        Please provide:
-        1. Your classification ("identifier" or "text")
-        2. A single sentence explaining what this column represents (purpose)
-        3. Brief reasoning for your classification
-        
-        Example purpose descriptions:
-        - "Person's full name for identification"
-        - "Email address for contact information"
-        - "Company name where person works"
-        - "Detailed product description or review text"
-        - "Customer feedback comments"
-        """
+        prompt = textwrap.dedent(f"""
+            Classify this Dataframe column as either "identifier" or "text":
+            
+            COLUMN NAME: {col_name}
+            SAMPLE VALUES (newlines removed): {cleaned_samples}
+            COLUMN STATISTICS: {stats}
+            
+            CLASSIFICATION RULES:
+            - "identifier": Names, emails, phone numbers, IDs, websites, addresses, companies, titles, categories, dates, numbers
+            - "text": Free-form text content like descriptions, notes, comments, explanations, statements, etc.
+            
+            Data should be classified as "identifier" unless it's clearly free-form text content.
+            
+            Please provide:
+            1. Your classification ("identifier" or "text")
+            2. A single sentence explaining what this column represents (purpose)
+            3. Brief reasoning for your classification
+            
+            Example purpose descriptions:
+            - "Person's full name for identification"
+            - "Email address for contact information"
+            - "Company name where person works"
+            - "Detailed product description or review text"
+            - "Customer feedback comments"
+        """).strip()
         
         try:
-            response = log_llm_call(lambda: self.client.chat.completions.create(
-                model=os.getenv("INTABULAR_PROCESSOR_MODEL", "gpt-4o-mini"),
-                messages=[{"role": "user", "content": prompt}],
-                response_format={
+            llm_kwargs = {
+                "model": os.getenv("INTABULAR_PROCESSOR_MODEL", "gpt-4o-mini"),
+                "messages": [{"role": "user", "content": prompt}],
+                "response_format": {
                     "type": "json_schema",
                     "json_schema": {
                         "name": "column_classification",
                         "schema": response_schema
                     }
                 },
-                temperature=0.1
-            ))
+                "temperature": 0.1
+            }
+            
+            response = log_llm_call(
+                lambda: self.client.chat.completions.create(**llm_kwargs),
+                **llm_kwargs
+            )
             
             response_content = response.choices[0].message.content
             

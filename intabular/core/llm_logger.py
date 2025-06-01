@@ -7,15 +7,16 @@ import json
 import inspect
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Optional, Callable
+from typing import Any, Dict, Callable
 
 
-def log_llm_call(call_func: Callable[[], Any]) -> Any:
+def log_llm_call(call_func: Callable[[], Any], **kwargs) -> Any:
     """
     Log LLM calls to separate files when LLM logging is enabled.
     
     Args:
         call_func: Function that makes the LLM call (e.g., lambda: client.chat.completions.create(**kwargs))
+        **kwargs: The arguments being passed to the LLM call (for logging purposes)
         
     Returns:
         The response from the LLM call
@@ -29,23 +30,27 @@ def log_llm_call(call_func: Callable[[], Any]) -> Any:
     
     # Log if enabled
     if llm_logging_enabled:
-        _log_llm_call_details(call_func, response)
+        _log_llm_call_details(kwargs, response)
     
     return response
 
 
-def _log_llm_call_details(call_func: Callable, response: Any):
+def _log_llm_call_details(call_kwargs: Dict[str, Any], response: Any):
     """Log the details of an LLM call to a file."""
     
     try:
-        # Get calling function name for the log file
+        # Get calling function name - go up levels to skip lambda and log functions
         frame = inspect.currentframe()
         caller_name = "unknown"
         try:
-            # Go up the stack to find the actual calling function (skip this function and log_llm_call)
-            caller_frame = frame.f_back.f_back.f_back
-            if caller_frame:
-                caller_name = caller_frame.f_code.co_name
+            # Go through the stack to find the actual calling function
+            current_frame = frame.f_back
+            for i in range(6):  # Go up several levels to find the real caller
+                if current_frame and current_frame.f_code.co_name not in ['<lambda>', 'log_llm_call', '_log_llm_call_details']:
+                    caller_name = current_frame.f_code.co_name
+                    break
+                if current_frame:
+                    current_frame = current_frame.f_back
         finally:
             del frame
         
@@ -57,20 +62,27 @@ def _log_llm_call_details(call_func: Callable, response: Any):
         # Create log file path
         log_file = llm_log_dir / f"{caller_name}.jsonl"
         
-        # Extract kwargs from the lambda if possible (for better logging)
-        call_info = "LLM call"
-        try:
-            # Try to get some info about the call from the function
-            if hasattr(call_func, '__code__'):
-                call_info = f"LLM call from {call_func.__code__.co_name}"
-        except:
-            pass
+        # Extract information from kwargs
+        prompt_content = "Prompt not provided"
+        model_used = call_kwargs.get('model', 'Unknown')
+        temperature = call_kwargs.get('temperature', 'Unknown')
+        
+        # Extract prompt from messages
+        messages = call_kwargs.get('messages', [])
+        if messages and len(messages) > 0:
+            user_message = next((msg for msg in messages if msg.get('role') == 'user'), None)
+            if user_message:
+                content = user_message.get('content', '')
+                prompt_content = content[:1000] + "..." if len(content) > 1000 else content
         
         # Prepare log entry
         log_entry = {
             "timestamp": datetime.now().isoformat(),
             "caller": caller_name,
-            "call_info": call_info,
+            "model": model_used,
+            "temperature": temperature,
+            "prompt": prompt_content,
+            "full_request": _sanitize_for_json(call_kwargs),
             "response": _sanitize_for_json(response.model_dump() if hasattr(response, 'model_dump') else str(response))
         }
         
