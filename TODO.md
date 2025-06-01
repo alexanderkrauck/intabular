@@ -31,9 +31,6 @@
 ## Advanced Very Very
 
 20. implement generalized information storage from this architecture
-
-## Very Very Advanced
-
 21. including decay mechanisms for data
 
 ## Very Very Very Very Advanced
