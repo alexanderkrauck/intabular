@@ -49,6 +49,8 @@ class TestLLMParsing:
         }
         '''
         
+        # Reset the side_effect and use return_value instead
+        mock_strategy_creator.client.chat.completions.create.side_effect = None
         mock_strategy_creator.client.chat.completions.create.return_value = mock_response
         
         # Create strategy
@@ -57,15 +59,17 @@ class TestLLMParsing:
         # Check that strategy was created (even if mocked)
         assert strategy is not None
     
-    @pytest.mark.llm
-    def test_llm_direct_parsing(self, processor, customer_crm_config):
+    @pytest.mark.no_llm
+    def test_llm_direct_parsing(self, mock_processor, customer_crm_config):
         """Test direct LLM parsing without intermediate transformation"""
         # Create a mock LLM response
         mock_response = Mock()
         mock_response.choices = [Mock()]
         mock_response.choices[0].message.content = "john.doe@acme.com"
         
-        processor.client.chat.completions.create.return_value = mock_response
+        # Reset side_effect and set return_value
+        mock_processor.client.chat.completions.create.side_effect = None
+        mock_processor.client.chat.completions.create.return_value = mock_response
         
         # Test data with complex contact info
         source_row = {
@@ -81,7 +85,7 @@ class TestLLMParsing:
         }
         
         # Apply the mapping
-        result = processor.apply_column_mapping(
+        result = mock_processor.apply_column_mapping(
             mapping_result, source_row, 'email', customer_crm_config, 
             {'row_count': 1, 'column_count': 2}
         )
@@ -89,23 +93,25 @@ class TestLLMParsing:
         assert result == "john.doe@acme.com", "LLM should extract email from complex data"
         
         # Verify the LLM was called with the right data
-        processor.client.chat.completions.create.assert_called_once()
-        call_args = processor.client.chat.completions.create.call_args
+        mock_processor.client.chat.completions.create.assert_called_once()
+        call_args = mock_processor.client.chat.completions.create.call_args
         prompt = call_args[1]['messages'][0]['content']
         
         # Check that the prompt contains the source data
         assert 'contact_info' in prompt
         assert 'John Doe <john.doe@acme.com>' in prompt
     
-    @pytest.mark.llm
-    def test_llm_column_filtering(self, processor, customer_crm_config):
+    @pytest.mark.no_llm
+    def test_llm_column_filtering(self, mock_processor, customer_crm_config):
         """Test that LLM only receives specified source columns"""
         # Mock LLM response
         mock_response = Mock()
         mock_response.choices = [Mock()]
         mock_response.choices[0].message.content = "Acme Corporation"
         
-        processor.client.chat.completions.create.return_value = mock_response
+        # Reset side_effect and set return_value
+        mock_processor.client.chat.completions.create.side_effect = None
+        mock_processor.client.chat.completions.create.return_value = mock_response
         
         # Test data with multiple columns
         source_row = {
@@ -123,7 +129,7 @@ class TestLLMParsing:
         }
         
         # Apply the mapping
-        result = processor.apply_column_mapping(
+        result = mock_processor.apply_column_mapping(
             mapping_result, source_row, 'company_name', customer_crm_config,
             {'row_count': 1, 'column_count': 4}
         )
@@ -131,7 +137,7 @@ class TestLLMParsing:
         assert result == "Acme Corporation"
         
         # Verify the LLM prompt only contains the specified columns
-        call_args = processor.client.chat.completions.create.call_args
+        call_args = mock_processor.client.chat.completions.create.call_args
         prompt = call_args[1]['messages'][0]['content']
         
         assert 'business_entity' in prompt
@@ -139,15 +145,17 @@ class TestLLMParsing:
         assert 'irrelevant_data' not in prompt
         assert 'more_irrelevant' not in prompt
     
-    @pytest.mark.llm
-    def test_llm_all_columns_when_not_specified(self, processor, customer_crm_config):
+    @pytest.mark.no_llm
+    def test_llm_all_columns_when_not_specified(self, mock_processor, customer_crm_config):
         """Test that LLM receives all columns when llm_source_columns not specified"""
         # Mock LLM response
         mock_response = Mock()
         mock_response.choices = [Mock()]
         mock_response.choices[0].message.content = "john doe"
         
-        processor.client.chat.completions.create.return_value = mock_response
+        # Reset side_effect and set return_value
+        mock_processor.client.chat.completions.create.side_effect = None
+        mock_processor.client.chat.completions.create.return_value = mock_response
         
         # Test data
         source_row = {
@@ -162,7 +170,7 @@ class TestLLMParsing:
         }
         
         # Apply the mapping
-        result = processor.apply_column_mapping(
+        result = mock_processor.apply_column_mapping(
             mapping_result, source_row, 'full_name', customer_crm_config,
             {'row_count': 1, 'column_count': 2}
         )
@@ -170,7 +178,7 @@ class TestLLMParsing:
         assert result == "john doe"
         
         # Verify the LLM prompt contains all columns
-        call_args = processor.client.chat.completions.create.call_args
+        call_args = mock_processor.client.chat.completions.create.call_args
         prompt = call_args[1]['messages'][0]['content']
         
         assert 'contact_info' in prompt
@@ -196,15 +204,17 @@ class TestLLMParsing:
         
         assert result == "", "Should return empty string on LLM error"
     
-    @pytest.mark.llm
-    def test_llm_with_current_value_merging(self, processor, customer_crm_config):
+    @pytest.mark.no_llm
+    def test_llm_with_current_value_merging(self, mock_processor, customer_crm_config):
         """Test LLM parsing with current value for merging"""
         # Mock LLM response that considers current value
         mock_response = Mock()
         mock_response.choices = [Mock()]
         mock_response.choices[0].message.content = "Existing notes | New: Very interested in enterprise solution"
         
-        processor.client.chat.completions.create.return_value = mock_response
+        # Reset side_effect and set return_value
+        mock_processor.client.chat.completions.create.side_effect = None
+        mock_processor.client.chat.completions.create.return_value = mock_response
         
         source_row = {
             'interaction_notes': 'Met at trade show, very interested in enterprise solution'
@@ -218,7 +228,7 @@ class TestLLMParsing:
         current_value = "Existing notes"
         
         # Apply the mapping with current value
-        result = processor.apply_column_mapping(
+        result = mock_processor.apply_column_mapping(
             mapping_result, source_row, 'notes', customer_crm_config,
             {'row_count': 1, 'column_count': 1}, current_value
         )
@@ -227,19 +237,21 @@ class TestLLMParsing:
         assert "enterprise solution" in result, "Should include new information"
         
         # Verify current value was included in prompt
-        call_args = processor.client.chat.completions.create.call_args
+        call_args = mock_processor.client.chat.completions.create.call_args
         prompt = call_args[1]['messages'][0]['content']
         assert 'Existing notes' in prompt
     
-    @pytest.mark.llm
-    def test_data_type_formatting_for_llm(self, processor, customer_crm_config):
+    @pytest.mark.no_llm
+    def test_data_type_formatting_for_llm(self, mock_processor, customer_crm_config):
         """Test that data types are properly formatted for LLM consumption"""
         # Mock LLM response
         mock_response = Mock()
         mock_response.choices = [Mock()]
         mock_response.choices[0].message.content = "50000"
         
-        processor.client.chat.completions.create.return_value = mock_response
+        # Reset side_effect and set return_value
+        mock_processor.client.chat.completions.create.side_effect = None
+        mock_processor.client.chat.completions.create.return_value = mock_response
         
         # Test data with different types
         source_row = {
@@ -256,13 +268,13 @@ class TestLLMParsing:
         }
         
         # Apply the mapping
-        processor.apply_column_mapping(
+        mock_processor.apply_column_mapping(
             mapping_result, source_row, 'deal_value', customer_crm_config,
             {'row_count': 1, 'column_count': 5}
         )
         
         # Verify the data was properly formatted in the prompt
-        call_args = processor.client.chat.completions.create.call_args
+        call_args = mock_processor.client.chat.completions.create.call_args
         prompt = call_args[1]['messages'][0]['content']
         
         # Should contain properly formatted data with types
