@@ -1,0 +1,50 @@
+enrichment_columns:
+  email:
+    description: "Primary email address used for contacting the customer. We only want one email address per customer. Keep the more important one."
+    supports_purpose_by: "This is necessary for the purpose since we need to contact the customer."
+    is_entity_identifier: true
+    identity_indication: 1.0
+  full_name:
+    description: "Full name of the customer. Always 'firstname lastname' format and all lowercase."
+    supports_purpose_by: "This is necessary for the purpose since we need to contact the customer and have a name to address them."
+    is_entity_identifier: true
+    identity_indication: 0.6
+  company_name:
+    description: "Full name of the company the customer works for. This is a company name, not a person name."
+    supports_purpose_by: "This is necessary for the purpose since we need to contact the customer and have a company name to address them."
+    is_entity_identifier: true
+    identity_indication: 0.0
+  deal_stage:
+    description: "Stage of the deal described in a single sentence"
+    supports_purpose_by: "This is necessary for the purpose since we need to know the deal stage to know if the customer is interested in our product and to adapt our email and sales strategy."
+    is_entity_identifier: false
+    identity_indication: 0.0
+  deal_value:
+    description: "Value of the deal in a single sentence"
+    supports_purpose_by: "This is necessary for the purpose since we need to know the deal value to know if the customer is interested in our customer priority."
+    is_entity_identifier: false
+    identity_indication: 0.0
+  phone:
+    description: "Primary phone number used for contacting the customer. There must only be one phone number per customer."
+    supports_purpose_by: "This is necessary for the purpose since we need to contact the customer and have a phone number to contact them."
+    is_entity_identifier: true
+    identity_indication: 0.6
+  location:
+    description: "Location of the customer in the format 'city, state, country' all in lowercase. If the more narrow location is not available, use the broader location only."
+    supports_purpose_by: "This is necessary for the purpose since we need to know the location of the customer to know if they are in the target market."
+    is_entity_identifier: true
+    identity_indication: 0.0
+  notes:
+    description: "Notes about the customer. Can be anything really to support the purpose. This is a free-form field."
+    supports_purpose_by: "This is necessary for the purpose since we need to know more personal information about the customer to write more personalized emails and sales pitches."
+    is_entity_identifier: false
+    identity_indication: 0.0
+
+purpose: >
+  Customer relationship data. Contains qualified customers, their contact information,
+  and active deal pipeline. This is the authoritative source for customer data and should
+  be prioritized in merges. The goal is to have all information required in order to contact
+  the customer per email or per phone. All information relevant for this can be stored here.
+  
+target_file_path: "test/data/output/customer_table.csv"
+sample_rows: 3 

@@ -362,4 +362,4 @@ yarn-error.log*
 
 .pdf
 data/
-!test/
+!test/*

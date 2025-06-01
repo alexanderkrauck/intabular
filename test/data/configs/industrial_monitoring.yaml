@@ -1,0 +1,39 @@
+enrichment_columns:
+  sensor_id:
+    description: "Unique identifier for the sensor device"
+    supports_purpose_by: "Essential for tracking which sensor produced each measurement"
+    is_entity_identifier: true
+    identity_indication: 1.0
+  timestamp:
+    description: "ISO timestamp when the measurement was taken"
+    supports_purpose_by: "Critical for time-series analysis and trend monitoring"
+    is_entity_identifier: false
+    identity_indication: 0.0
+  temperature_celsius:
+    description: "Temperature measurement in degrees Celsius"
+    supports_purpose_by: "Core environmental monitoring parameter for process control"
+    is_entity_identifier: false
+    identity_indication: 0.0
+  pressure_bar:
+    description: "Pressure measurement in bar units"
+    supports_purpose_by: "Essential for safety monitoring and process optimization"
+    is_entity_identifier: false
+    identity_indication: 0.0
+  location:
+    description: "Physical location description of the sensor"
+    supports_purpose_by: "Necessary for spatial analysis and maintenance routing"
+    is_entity_identifier: true
+    identity_indication: 0.3
+  status:
+    description: "Current operational status of the sensor or monitored system"
+    supports_purpose_by: "Critical for alert management and predictive maintenance"
+    is_entity_identifier: false
+    identity_indication: 0.0
+
+purpose: >
+  Industrial sensor monitoring system for real-time environmental and process control.
+  Tracks temperature, pressure, flow, and humidity measurements across manufacturing
+  facilities for safety, efficiency, and predictive maintenance purposes.
+  
+target_file_path: "test/data/output/sensor_readings.csv"
+sample_rows: 2 

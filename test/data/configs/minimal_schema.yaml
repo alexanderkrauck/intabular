@@ -1,0 +1,10 @@
+enrichment_columns:
+  email:
+    description: "Email address"
+    supports_purpose_by: "Primary identifier"
+    is_entity_identifier: true
+    identity_indication: 1.0
+
+purpose: "Minimal test database with just email identification"
+target_file_path: "test/data/output/minimal.csv"
+sample_rows: 1 

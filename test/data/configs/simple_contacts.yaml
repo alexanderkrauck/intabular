@@ -1,0 +1,22 @@
+enrichment_columns:
+  email:
+    description: "Primary email address for contact"
+    supports_purpose_by: "Essential for communication"
+    is_entity_identifier: true
+    identity_indication: 1.0
+  full_name:
+    description: "Complete name of the contact"
+    supports_purpose_by: "Needed for personalized communication"
+    is_entity_identifier: true
+    identity_indication: 0.8
+  company_name:
+    description: "Company where the contact works"
+    supports_purpose_by: "Important for business context"
+    is_entity_identifier: false
+    identity_indication: 0.0
+
+purpose: >
+  Simple contact database for basic communication and outreach.
+  
+target_file_path: "test/data/output/simple_contacts.csv"
+sample_rows: 2 
