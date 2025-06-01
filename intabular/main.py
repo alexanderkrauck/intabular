@@ -87,7 +87,7 @@ def run_ingestion_pipeline(yaml_config_file: str, csv_to_ingest: str) -> pd.Data
 
     # Read the CSV to ingest and the target table
     df_to_ingest = pd.read_csv(csv_to_ingest)#TODO This already assumes we have a header
-    df_to_enrich = pd.read_csv(target_config.target_file_path) if Path(target_config.target_file_path).exists() else pd.DataFrame()
+    df_to_enrich = pd.read_csv(target_config.target_file_path) if Path(target_config.target_file_path).exists() else pd.DataFrame(columns=target_config.get_enrichment_column_names())
     
     # Analyze the CSV
     logger.info("Analyzing CSV...")
@@ -100,7 +100,7 @@ def run_ingestion_pipeline(yaml_config_file: str, csv_to_ingest: str) -> pd.Data
     
     # Execute ingestion
     logger.info("Executing ingestion...")
-    ingested_df = processor.execute_ingestion(
+    enriched_df = processor.execute_ingestion(
     df_to_ingest,
     df_to_enrich,
     strategy,
@@ -109,12 +109,12 @@ def run_ingestion_pipeline(yaml_config_file: str, csv_to_ingest: str) -> pd.Data
     )
     
     # Save results
-    ingested_df.to_csv(target_config.target_file_path, index=False)
+    enriched_df.to_csv(target_config.target_file_path, index=False)
     
     # Final summary
-    logger.info(f"Ingestion complete: {len(ingested_df)} rows saved to {target_config.target_file_path}")
+    logger.info(f"Ingestion complete: {len(enriched_df)} rows saved to {target_config.target_file_path}")
     
-    return ingested_df
+    return enriched_df
 
 
 def infer_config_from_table(table_path: str, purpose: str) -> GatekeeperConfig:

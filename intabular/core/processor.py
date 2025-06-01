@@ -172,44 +172,37 @@ class DataframeIngestionProcessor:
                 current_value
             )
         elif mapping_result['transformation_type'] == 'llm_format':
-            # First apply the format transformation
-            intermediate_result = self.execute_transformation(
-                mapping_result['transformation_rule'], 
-                source_row, 
-                current_value
-            )
-            
-            # Now pass to LLM for further processing
+            # Direct LLM parsing - skip intermediate transformation
             return self._apply_llm_transformation(
-                intermediate_result,
                 target_column_name,
                 target_config,
                 general_ingestion_analysis,
                 source_row,
-                current_value
+                current_value,
+                mapping_result
             )
         else:
             raise ValueError(f"Unknown transformation type: {mapping_result['transformation_type']}")
 
     def _apply_llm_transformation(
         self,
-        intermediate_result: Any,
         target_column_name: str,
         target_config: GatekeeperConfig,
         general_ingestion_analysis: Dict[str, Any],
         source_row: Dict[str, Any],
-        current_value: Any = None
+        current_value: Any = None,
+        mapping_result: Dict[str, Any] = None
     ) -> Any:
         """
-        Apply LLM-based transformation for complex normalization decisions
+        Apply LLM-based transformation for direct parsing of source columns
         
         Args:
-            intermediate_result: Result from initial format transformation
             target_column_name: Name of the target column being filled
             target_config: Configuration for the target dataset
             general_ingestion_analysis: General analysis of the ingestion process
             source_row: Original source row data
             current_value: Current value in target column (for merging)
+            mapping_result: Strategy mapping result containing llm_source_columns specification
             
         Returns:
             LLM-processed transformation result
@@ -219,32 +212,61 @@ class DataframeIngestionProcessor:
             # Get target column information
             column_info = target_config.get_interpretable_column_information(target_column_name)
             
-            # Prepare prompt for LLM
+            # Determine which source columns to include
+            if mapping_result and mapping_result.get('llm_source_columns'):
+                # Use specified columns only
+                source_columns = mapping_result['llm_source_columns']
+                filtered_source_data = {col: source_row.get(col, '') for col in source_columns if col in source_row}
+            else:
+                # Use all source columns
+                filtered_source_data = source_row
+            
+            # Format source data with types for LLM
+            source_data_formatted = {}
+            for col_name, value in filtered_source_data.items():
+                # Include both value and inferred type
+                if value is None or pd.isna(value):
+                    source_data_formatted[col_name] = {"value": "", "type": "empty"}
+                elif isinstance(value, str):
+                    source_data_formatted[col_name] = {"value": value.strip(), "type": "text"}
+                elif isinstance(value, (int, float)):
+                    source_data_formatted[col_name] = {"value": str(value), "type": "number"}
+                else:
+                    source_data_formatted[col_name] = {"value": str(value), "type": "text"}
+            
+            # Prepare prompt for direct LLM parsing
             prompt = textwrap.dedent(f"""
-                We want to map a information from a source to a column in our target table. Transform and normalize the following value for a specific target column.
+                You are parsing source data directly into a target database column. Your task is to analyze all the provided source columns and extract/transform the appropriate value for the target column.
                 
-                GENERAL PURPOSE OF DATA: {target_config.purpose}
+                GENERAL PURPOSE OF DATABASE: {target_config.purpose}
                 
                 TARGET COLUMN INFORMATION:
                 {column_info}
                 
-                GENERAL INGESTION ANALYSIS of the incoming table where this new information is from:
+                GENERAL INGESTION ANALYSIS (context about the source data):
                 {json.dumps(general_ingestion_analysis, indent=2)}
                 
-                INTERMEDIATE TRANSFORMATION RESULT: {intermediate_result}
+                SOURCE COLUMNS AND VALUES:
+                {json.dumps(source_data_formatted, indent=2)}
                 
                 CURRENT TARGET VALUE: {current_value if current_value else "None"}
                 
-                Please transform the intermediate result into a value that properly fits the target column requirements.
-                Consider the purpose of the data, the specific column requirements, and the overall ingestion context.
-                Return only the transformed value, nothing else.
+                INSTRUCTIONS:
+                1. Analyze all the source columns and their values
+                2. Determine which source data is relevant for the target column
+                3. Extract, combine, or transform the relevant data to fit the target column requirements
+                4. Consider the target column type, format, and business purpose
+                5. If there's a current value, decide whether to replace it, merge with it, or keep it
+                6. Return only the final transformed value that should go into the target column
+                
+                Return only the transformed value, nothing else. If no relevant data is found, return an empty string.
             """).strip()
             
             llm_kwargs = {
                 "model": os.getenv('INTABULAR_PROCESSOR_MODEL', 'gpt-4o-mini'),
                 "messages": [{"role": "user", "content": prompt}],
                 "temperature": 0.1,
-                "max_tokens": 500
+                "max_tokens": 1000
             }
             
             response = log_llm_call(
@@ -253,14 +275,14 @@ class DataframeIngestionProcessor:
             )
             
             result = response.choices[0].message.content.strip()
-            self.logger.debug(f"LLM transformation result for {target_column_name}: {result}")
+            self.logger.debug(f"LLM direct parsing result for {target_column_name}: {result}")
             return result
             
         except Exception as e:
-            error_msg = f"Failed LLM transformation for {target_column_name}: {e}"
+            error_msg = f"Failed LLM direct parsing for {target_column_name}: {e}"
             self.logger.warning(error_msg)
-            # Fallback to intermediate result if LLM fails
-            return intermediate_result
+            # Fallback to empty string if LLM fails
+            return ""
 
     def execute_ingestion(self, source_df: pd.DataFrame, target_df: pd.DataFrame, strategy, target_config: GatekeeperConfig, general_ingestion_analysis: Dict[str, Any]) -> pd.DataFrame:
         """Execute entity-focused ingestion with identity-based merging"""
@@ -281,6 +303,7 @@ class DataframeIngestionProcessor:
         self.logger.info(f"Processing {len(source_df)} source rows against {len(target_df)} target rows")
         self.logger.info(f"Entity columns: {list(entity_mappings.keys())}")
         self.logger.info(f"Merge columns: {list(merge_mappings.keys())}")
+        self.logger.info(f"All columns: {list(target_config.entity_columns.keys())}")
         
         # Process each source row: merge or add #TODO: possibly reconsider copying
         target_df = target_df.copy()

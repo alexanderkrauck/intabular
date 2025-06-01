@@ -100,7 +100,7 @@ class DataframeIngestionStrategy:
             ensuring proper normalization for entity identification purposes.
         """).strip()
 
-        # Enhanced schema with embedded transformation rules and examples
+        # Enhanced schema with simplified transformation types
         response_schema = {
             "type": "object",
             "title": "Entity Column Transformation Strategy",
@@ -119,15 +119,15 @@ class DataframeIngestionStrategy:
                     "type": "string",
                     "enum": ["format", "llm_format", "none"],
                     "title": "Transformation Method",
-                    "description": "format: Apply deterministic Python transformation rules for normalization | llm_format: Use LLM for complex normalization decisions after applying rules | none: No suitable source mapping found",
+                    "description": "format: Apply deterministic Python transformation rules for normalization | llm_format: Use LLM to directly parse all source columns into target format | none: No suitable source mapping found",
                     "examples": ["format", "llm_format", "none"],
-                    "$comment": "Choose 'format' for deterministic transformations like email normalization, 'llm_format' when LLM processing is needed after rule application, 'none' when no mapping is possible. Entity columns typically use 'format' for consistent normalization."
+                    "$comment": "Choose 'format' for deterministic transformations like email normalization, 'llm_format' when complex interpretation of multiple source columns is needed, 'none' when no mapping is possible. For llm_format, the LLM will receive all source column values and types."
                 },
                 
                 "transformation_rule": {
                     "type": "string",
                     "title": "Transformation Rule", 
-                    "description": f"Python expression for transforming source data into normalized entity identifier format. You may use source column names as variables. Make sure to return rules that perfectly transform the input columns into the target column including all normalization rules that the target column requires. The only available functions for transformations are: {str(SAFE_NAMESPACE.keys())}",
+                    "description": f"Python expression for transforming source data into normalized entity identifier format. You may use source column names as variables. Only required for 'format' transformation type. The ONLY available functions for transformations are: {str(SAFE_NAMESPACE.keys())}.",
                     "examples": [
                         "email.strip().lower()",
                         "f'{{first_name.strip().lower()}} {{last_name.strip().lower()}}'",
@@ -137,11 +137,24 @@ class DataframeIngestionStrategy:
                         "datetime.strptime(date_str, '%Y-%m-%d').strftime('%Y-%m-%d')"
                     ],
                     "minLength": 1,
-                    "$comment": "The transformation rule must normalize the source column into a format that perfectly matches the target column requirements including case sensitivity, formatting, and validation rules. Must be a valid Python expression."
+                    "$comment": "The transformation rule must normalize the source column into a format that perfectly matches the target column requirements. Only required for 'format' type. For 'llm_format', this field is optional."
+                },
+
+                "llm_source_columns": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "title": "Source Columns for LLM",
+                    "description": "List of source column names to provide to LLM for parsing. Only used when transformation_type is 'llm_format'. If not specified, all source columns will be provided.",
+                    "examples": [
+                        ["first_name", "last_name"],
+                        ["email_address", "contact_email"],
+                        ["company", "organization", "business_name"]
+                    ],
+                    "$comment": "Optional field to limit which source columns the LLM should consider. Useful for performance and focus when many irrelevant columns exist."
                 }
             },
             
-            "required": ["reasoning", "transformation_type", "transformation_rule"],
+            "required": ["reasoning", "transformation_type"],
             "additionalProperties": False
         }
 
@@ -169,8 +182,8 @@ class DataframeIngestionStrategy:
         
         result = json.loads(response.choices[0].message.content)
         
-        if result["transformation_type"] != "none" and not result.get("transformation_rule"):
-            #TODO: fallback to explicit LLM call to generate transformation rule only.
+        # Validate that format transformations have transformation rules
+        if result["transformation_type"] == "format" and not result.get("transformation_rule"):
             raise ValueError(f"Transformation rule is required for format transformation type for column {target_col}")
 
         return result
@@ -193,13 +206,13 @@ class DataframeIngestionStrategy:
             The general purpose of the database is: {target_purpose}
             The details about the column we are trying to merge into is: {target_column_info}
             
-            Rigorious information about the incoming dataframe columns is:
+            Rigorous information about the incoming dataframe columns is:
             {source_columns}
             
             The goal is to create a transformation rule that converts the incoming source data into the target column format, potentially merging with existing content when appropriate or combining the content of multiple incoming columns.
         """).strip()
         
-        # Enhanced schema with embedded transformation rules and examples
+        # Enhanced schema with simplified transformation types
         response_schema = {
             "type": "object",
             "title": "Column Transformation Strategy",
@@ -218,30 +231,43 @@ class DataframeIngestionStrategy:
                     "type": "string",
                     "enum": ["format", "llm_format", "none"],
                     "title": "Transformation Method",
-                    "description": "format: Apply deterministic Python transformation rules | llm_format: Use LLM for complex normalization after applying rules | none: No suitable source mapping found",
+                    "description": "format: Apply deterministic Python transformation rules | llm_format: Use LLM to directly parse all source columns into target format | none: No suitable source mapping found",
                     "examples": ["format", "llm_format", "none"],
-                    "$comment": "Choose 'format' for deterministic transformations, 'llm_format' when LLM processing is needed after rule application, 'none' when no mapping is possible. 'none' should be used if you are unsure and it is absolutely okay to choose it."
+                    "$comment": "Choose 'format' for deterministic transformations, 'llm_format' when complex interpretation of multiple source columns is needed for merging/combining content, 'none' when no mapping is possible. For llm_format, the LLM will receive all source column values and types."
                 },
                 
                 "transformation_rule": {
                     "type": "string", 
                     "title": "Transformation Rule",
-                    "description": f"Python expression or column reference for transforming source data. You may use source column names as variables. Moreover, the current target column value can be referenced with 'current' for merging scenarios. It is strongly adviced to also include the current value in the transformation as otherwise the current information is lost. The only available functions for transformations are: {str(SAFE_NAMESPACE.keys())}",
+                    "description": f"Python expression or column reference for transforming source data. Only required for 'format' transformation type. You may use source column names as variables and 'current' for existing target value. The ONLY available functions for transformations are: {str(SAFE_NAMESPACE.keys())}.",
                     "examples": [
                         "email.strip().lower()",
-                        "f'{first_name.strip().lower()} {last_name.strip().lower()}'",
+                        "f'{{first_name.strip().lower()}} {{last_name.strip().lower()}}'",
                         "re.sub(r'[^\\d]', '', phone)[:10]",
-                        "f'Current: {current}, Notes: {notes}'",
+                        "f'Current: {{current}}, Notes: {{notes}}'",
                         "notes",
                         "company_name.strip().upper()",
                         "datetime.strptime(date_str, '%Y-%m-%d').strftime('%m/%d/%Y')"
                     ],
                     "minLength": 1,
-                    "$comment": "It is essential to format the source column into a format that fully respects the prosa formatting rules of the target column, including how case sensitivity is treated, etc. The transformation rule must always be a valid Python expression that can be executed."
+                    "$comment": "Must be a valid Python expression that can be executed. Only required for 'format' type. For 'llm_format', this field is optional."
+                },
+
+                "llm_source_columns": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "title": "Source Columns for LLM",
+                    "description": "List of source column names to provide to LLM for parsing. Only used when transformation_type is 'llm_format'. If not specified, all source columns will be provided.",
+                    "examples": [
+                        ["notes", "comments", "description"],
+                        ["address", "city", "state", "zip"],
+                        ["phone", "mobile", "contact_number"]
+                    ],
+                    "$comment": "Optional field to limit which source columns the LLM should consider. Useful for performance and focus when many irrelevant columns exist."
                 }
             },
             
-            "required": ["reasoning", "transformation_type", "transformation_rule"],
+            "required": ["reasoning", "transformation_type"],
             "additionalProperties": False
         }
 
@@ -267,4 +293,10 @@ class DataframeIngestionStrategy:
             **llm_kwargs
         )
 
-        return json.loads(response.choices[0].message.content)
+        result = json.loads(response.choices[0].message.content)
+        
+        # Validate that format transformations have transformation rules
+        if result["transformation_type"] == "format" and not result.get("transformation_rule"):
+            raise ValueError(f"Transformation rule is required for format transformation type for column {target_col}")
+
+        return result
