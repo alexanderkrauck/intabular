@@ -267,8 +267,8 @@ pip install -e .
 ## 📚 Documentation & Support
 
 - **PyPI Package**: [https://pypi.org/project/intabular/](https://pypi.org/project/intabular/)
-- **Source Code**: [https://github.com/alexanderkrauck/MailPipe](https://github.com/alexanderkrauck/MailPipe)
-- **Issues**: [https://github.com/alexanderkrauck/MailPipe/issues](https://github.com/alexanderkrauck/MailPipe/issues)
+- **Source Code**: [https://github.com/alexanderkrauck/intabular](https://github.com/alexanderkrauck/intabular)
+- **Issues**: [https://github.com/alexanderkrauck/intabular/issues](https://github.com/alexanderkrauck/intabular/issues)
 
 ---
 
