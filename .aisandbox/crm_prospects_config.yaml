@@ -1,0 +1,55 @@
+
+purpose: >
+  Unified sales prospect database for CRM and outreach. Contains qualified leads
+  with complete contact information for sales team follow-up and relationship management.
+  
+enrichment_columns:
+  email:
+    description: "Primary email address for prospect contact. Must be unique and valid."
+    supports_purpose_by: "Essential for email outreach and lead tracking"
+    is_entity_identifier: true
+    identity_indication: 1.0
+    
+  full_name:
+    description: "Complete prospect name for personalized communication"
+    supports_purpose_by: "Required for personalized outreach and relationship building"
+    is_entity_identifier: true
+    identity_indication: 0.8
+    
+  company_name:
+    description: "Prospect's organization name for B2B relationship management"
+    supports_purpose_by: "Critical for account-based sales and company research"
+    is_entity_identifier: false
+    identity_indication: 0.0
+    
+  job_title:
+    description: "Professional role/position for targeted messaging"
+    supports_purpose_by: "Enables role-specific sales messaging and qualification"
+    is_entity_identifier: false
+    identity_indication: 0.0
+    
+  phone:
+    description: "Primary phone number for direct contact"
+    supports_purpose_by: "Enables phone outreach and urgent communication"
+    is_entity_identifier: false
+    identity_indication: 0.0
+    
+  location:
+    description: "Geographic location for territory management"
+    supports_purpose_by: "Helps with territory assignment and regional campaigns"
+    is_entity_identifier: false
+    identity_indication: 0.0
+    
+  lead_source:
+    description: "How we acquired this lead for attribution tracking"
+    supports_purpose_by: "Important for measuring channel effectiveness"
+    is_entity_identifier: false
+    identity_indication: 0.0
+    
+  notes:
+    description: "Sales notes and context for relationship management"
+    supports_purpose_by: "Critical for personalized follow-up and relationship building"
+    is_entity_identifier: false
+    identity_indication: 0.0
+
+target_file_path: "unified_sales_prospects.csv"

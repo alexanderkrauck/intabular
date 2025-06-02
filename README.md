@@ -1,4 +1,4 @@
-# InTabular - Intelligent CSV Data Ingestion
+# InTabular - Intelligent CSV Data Ingestion (In Development - Feedback Welcome)
 
 [![PyPI version](https://badge.fury.io/py/intabular.svg)](https://badge.fury.io/py/intabular)
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
@@ -33,32 +33,56 @@ pip install intabular
 
 ### Basic Usage
 
-**Step 1: Create a target schema configuration**
+**Recommended: Create config manually**
+
+Create a YAML file (e.g., `customers_config.yaml`) that defines your target schema:
+
+```yaml
+purpose: >
+  Customer master database for CRM and outreach. Contains qualified customers 
+  with complete contact information for sales team follow-up and relationship management.
+
+enrichment_columns:
+  email:
+    description: "Primary email address for customer contact. Must be unique and valid."
+    supports_purpose_by: "Essential for email outreach and lead tracking"
+    is_entity_identifier: true
+    identity_indication: 1.0
+    
+  full_name:
+    description: "Complete customer name for personalized communication"
+    supports_purpose_by: "Required for personalized outreach and relationship building"
+    is_entity_identifier: true
+    identity_indication: 0.8
+    
+  company_name:
+    description: "Customer's organization name for B2B relationship management"
+    supports_purpose_by: "Critical for account-based sales and company research"
+    is_entity_identifier: false
+    identity_indication: 0.0
+    
+  phone:
+    description: "Primary phone number for direct contact"
+    supports_purpose_by: "Enables phone outreach and urgent communication"
+    is_entity_identifier: false
+    identity_indication: 0.0
+    
+  location:
+    description: "Geographic location for territory management"
+    supports_purpose_by: "Helps with territory assignment and regional campaigns"
+    is_entity_identifier: false
+    identity_indication: 0.0
+
+target_file_path: "customers.csv"
+```
+
+**Alternative: Automatic config generation (experimental)**
 ```bash
-# Generate config from table purpose
+# Generate basic config from existing table - needs manual editing
 python -m intabular config customers.csv "Customer master database for CRM and outreach"
 ```
 
-This creates `customers_config.yaml`:
-```yaml
-purpose: "Customer master database for CRM and outreach"
-enrichment_columns:
-  email:
-    description: "Customer email address"
-    match_type: "semantic"
-    is_entity_identifier: true
-    identity_indication: 1.0
-  full_name:
-    description: "Customer full name"
-    match_type: "semantic"
-    is_entity_identifier: false
-  company_name:
-    description: "Company name"
-    match_type: "semantic"
-    is_entity_identifier: false
-target_file_path: "customers.csv"
-sample_rows: 3
-```
+*Note: The automatic config generation creates a basic template that requires manual editing to add proper `supports_purpose_by`, `is_entity_identifier`, and `identity_indication` fields for production use.*
 
 **Step 2: Ingest unknown CSV files**
 ```bash
@@ -67,6 +91,74 @@ python -m intabular customers_config.yaml unknown-leads.csv
 ```
 
 **That's it!** Your data is now mapped to your schema and saved to `customers.csv`.
+
+## 📋 Configuration Guide
+
+### Configuration Fields Explained
+
+- **`purpose`**: Describes what your target database is for (helps AI understand context)
+- **`enrichment_columns`**: Defines each column in your target schema
+  - **`description`**: What this field contains (be specific!)
+  - **`supports_purpose_by`**: How this field helps achieve the database purpose
+  - **`is_entity_identifier`**: Whether this field helps identify unique entities
+  - **`identity_indication`**: How strong an identifier this is (0.0 to 1.0)
+- **`target_file_path`**: Where to save the final result
+
+### Example Configurations
+
+**Sales Prospects Database:**
+```yaml
+purpose: "Sales prospect database for B2B outreach and lead management"
+enrichment_columns:
+  email:
+    description: "Business email address"
+    supports_purpose_by: "Required for email outreach campaigns"
+    is_entity_identifier: true
+    identity_indication: 1.0
+  full_name:
+    description: "Contact's full name"
+    supports_purpose_by: "Personalizes outreach messages"
+    is_entity_identifier: true
+    identity_indication: 0.7
+  company_name:
+    description: "Company or organization name"
+    supports_purpose_by: "Enables account-based selling"
+    is_entity_identifier: false
+    identity_indication: 0.0
+  job_title:
+    description: "Professional role or position"
+    supports_purpose_by: "Helps target decision makers"
+    is_entity_identifier: false
+    identity_indication: 0.0
+target_file_path: "sales_prospects.csv"
+```
+
+**Event Attendees Database:**
+```yaml
+purpose: "Event attendee database for conference management and networking"
+enrichment_columns:
+  email:
+    description: "Attendee email for event communications"
+    supports_purpose_by: "Essential for event updates and follow-up"
+    is_entity_identifier: true
+    identity_indication: 1.0
+  full_name:
+    description: "Attendee full name for badges and networking"
+    supports_purpose_by: "Required for event experience and networking"
+    is_entity_identifier: true
+    identity_indication: 0.9
+  company:
+    description: "Attendee's organization"
+    supports_purpose_by: "Enables business networking and sponsor matching"
+    is_entity_identifier: false
+    identity_indication: 0.0
+  registration_type:
+    description: "Type of ticket or registration"
+    supports_purpose_by: "Determines access levels and benefits"
+    is_entity_identifier: false
+    identity_indication: 0.0
+target_file_path: "event_attendees.csv"
+```
 
 ## 🧠 How It Works
 
@@ -78,14 +170,13 @@ InTabular uses a 4-step AI pipeline:
 - Detects data types (identifier vs text content)
 
 ### 2. **Strategy Creation**
-- Maps source columns to target schema fields  
-- Creates dual strategies for existing vs empty target data
+- Analyzes source columns against target schema fields
+- Creates separate strategies for entity identifier vs descriptive columns
+- Uses parallel processing for performance with multiple columns
 - Chooses optimal transformation approaches:
-  - **Replace**: Direct column mapping
-  - **Derive**: Format-based combination of fields
-  - **Concat**: Simple concatenation with separators
-  - **Prompt_merge**: LLM-powered intelligent merging
-  - **Preserve**: Keep existing target data
+  - **format**: Deterministic Python transformation rules (e.g., combine fields, normalize data)
+  - **llm_format**: LLM-powered intelligent parsing when complex interpretation is needed
+  - **none**: No suitable source mapping found
 
 ### 3. **Quality Processing**
 - Executes field-by-field transformations
@@ -107,19 +198,29 @@ Jane,Smith,jane@techco.com,TechCo,CTO,"New York, NY"
 
 ### Target Schema:
 ```yaml
+purpose: "Customer contact database for sales outreach"
 enrichment_columns:
   email:
-    description: "Email address"
-    match_type: "semantic"
+    description: "Primary email address for contact"
+    supports_purpose_by: "Required for email outreach campaigns"
+    is_entity_identifier: true
+    identity_indication: 1.0
   full_name:
-    description: "Full name"
-    match_type: "semantic"
+    description: "Complete customer name"
+    supports_purpose_by: "Personalizes communication"
+    is_entity_identifier: true
+    identity_indication: 0.8
   company_name:
-    description: "Company name"
-    match_type: "semantic"
+    description: "Customer's organization"
+    supports_purpose_by: "Account-based relationship management"
+    is_entity_identifier: false
+    identity_indication: 0.0
   location:
-    description: "Location"
-    match_type: "semantic"
+    description: "Geographic location"
+    supports_purpose_by: "Territory management and localization"
+    is_entity_identifier: false
+    identity_indication: 0.0
+target_file_path: "customers.csv"
 ```
 
 ### Output (automatically mapped):
@@ -178,12 +279,21 @@ print(f"Processed {len(result_df)} rows")
 ## 🛠️ Command Line Interface
 
 ```bash
-# Create configuration from table structure
+# Ingest CSV with existing configuration (recommended workflow)
+python -m intabular <yaml_config> <csv_file>
+
+# Generate basic config template (experimental - requires manual editing)
 python -m intabular config <table_path> <purpose>
 
-# Ingest CSV with existing configuration
-python -m intabular <yaml_config> <csv_file>
+# Examples:
+python -m intabular customers_config.yaml new_leads.csv
+python -m intabular event_config.yaml registrations.csv
+python -m intabular config customers.csv "Customer database for sales outreach"  # experimental
 ```
+
+**Recommended workflow:**
+1. Create config manually using examples from Configuration Guide below
+2. Run ingestion: `python -m intabular your_config.yaml your_data.csv`
 
 ## 🎯 Core Philosophy: Semantic Data Management
 

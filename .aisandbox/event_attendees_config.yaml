@@ -1,0 +1,68 @@
+
+purpose: >
+  Unified event attendee database for conference management, networking, and follow-up.
+  Contains complete attendee information for event logistics, personalized experiences,
+  and post-event relationship building.
+  
+enrichment_columns:
+  email:
+    description: "Primary email address for event communications and follow-up"
+    supports_purpose_by: "Essential for event updates, networking, and post-event outreach"
+    is_entity_identifier: true
+    identity_indication: 1.0
+    
+  full_name:
+    description: "Complete attendee name for name badges and networking"
+    supports_purpose_by: "Required for personalized event experience and networking"
+    is_entity_identifier: true
+    identity_indication: 0.9
+    
+  company:
+    description: "Attendee's organization for networking and business development"
+    supports_purpose_by: "Critical for B2B networking and sponsor matching"
+    is_entity_identifier: false
+    identity_indication: 0.0
+    
+  job_title:
+    description: "Professional role for targeted networking and content recommendations"
+    supports_purpose_by: "Enables role-specific networking and session recommendations"
+    is_entity_identifier: false
+    identity_indication: 0.0
+    
+  phone:
+    description: "Contact phone for urgent event communications"
+    supports_purpose_by: "Important for day-of-event logistics and emergency contact"
+    is_entity_identifier: false
+    identity_indication: 0.0
+    
+  industry:
+    description: "Professional industry for networking groups and content tracks"
+    supports_purpose_by: "Helps with targeted networking and relevant session matching"
+    is_entity_identifier: false
+    identity_indication: 0.0
+    
+  registration_type:
+    description: "Type of registration or ticket for access control and benefits"
+    supports_purpose_by: "Determines event access levels and special benefits"
+    is_entity_identifier: false
+    identity_indication: 0.0
+    
+  location:
+    description: "Geographic location for local networking and logistics"
+    supports_purpose_by: "Useful for local meetups and travel coordination"
+    is_entity_identifier: false
+    identity_indication: 0.0
+    
+  special_requirements:
+    description: "Dietary, accessibility, or other special needs"
+    supports_purpose_by: "Critical for inclusive event planning and attendee care"
+    is_entity_identifier: false
+    identity_indication: 0.0
+    
+  networking_interests:
+    description: "Professional interests and goals for targeted networking"
+    supports_purpose_by: "Enables smart networking matching and personalized recommendations"
+    is_entity_identifier: false
+    identity_indication: 0.0
+
+target_file_path: "unified_event_attendees.csv"
