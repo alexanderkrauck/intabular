@@ -7,6 +7,7 @@ Sends a beautiful, modern HTML email with CSS styling.
 import smtplib
 import json
 import sys
+import textwrap
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.mime.base import MIMEBase

@@ -6,6 +6,7 @@ Test script to send a single HTML email with Kim's signature.
 import smtplib
 import json
 import sys
+import textwrap
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 

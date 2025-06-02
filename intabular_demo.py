@@ -24,8 +24,9 @@ import os
 from pathlib import Path
 from dotenv import load_dotenv
 
-# Import InTabular
-from intabular import setup_logging, run_ingestion_pipeline
+# Import InTabular - using new architecture
+from intabular import setup_logging
+from intabular.csv_component import run_csv_ingestion_pipeline
 
 print("✅ InTabular imported successfully!")
 load_dotenv()
@@ -34,8 +35,8 @@ load_dotenv()
 setup_logging(level="INFO", console_output=True)
 
 # %%
-# Run ingestion with full logging
-result_df = run_ingestion_pipeline("yaml_example.yaml", "data/target_with_emails_test10.csv")
+# Run ingestion with full logging - using new CSV component
+result_df = run_csv_ingestion_pipeline("yaml_example.yaml", "data/target_with_emails_test10.csv")
 print(f"✅ Processed {len(result_df)} rows")
 
 # %%

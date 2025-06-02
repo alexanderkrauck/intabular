@@ -12,6 +12,7 @@ from openai import OpenAI # Corrected import
 from dotenv import load_dotenv # Added for .env support
 import html # Added for HTML escaping
 import re # Added for extracting signature parts
+import textwrap
 
 # Load environment variables from .env file
 load_dotenv()

@@ -19,6 +19,7 @@ Key Use Case:
 import json
 import os
 import sys
+import textwrap
 import yaml
 import numpy as np
 from pathlib import Path
@@ -142,60 +143,60 @@ class AdaptiveMerger:
         
         print(f"   🧠 Requesting LLM semantic analysis...")
         
-        prompt = f"""
-        Analyze this unknown CSV file by examining both column names AND actual data content:
-        
-        File: {Path(csv_path).name}
-        Total Rows: {len(df)}
-        
-        Detailed Column Analysis:
-        {json.dumps(column_details, indent=2)}
-        
-        For each column, analyze:
-        1. Column name semantics (what the name suggests)
-        2. Actual data content (what the values reveal)
-        3. Business context (what this data represents)
-        
-        Provide analysis in this JSON format:
-        {{
-            "table_purpose": "inferred_business_purpose_based_on_all_columns_and_data",
-            "data_source": "likely_platform_or_system_this_came_from",
-            "column_semantics": {{
-                "column_name": {{
-                    "semantic_type": "email|name|company|phone|address|identifier|text|number|date|url|social|industry|title|location|other",
-                    "confidence": 0.95,
-                    "description": "what_this_column_represents_based_on_name_and_data",
-                    "data_pattern": "observed_pattern_in_actual_values",
-                    "business_value": "how_valuable_this_data_is_for_business_use",
-                    "data_quality": "assessment_based_on_completeness_and_consistency"
+        prompt = textwrap.dedent(f"""
+            Analyze this unknown CSV file by examining both column names AND actual data content:
+            
+            File: {Path(csv_path).name}
+            Total Rows: {len(df)}
+            
+            Detailed Column Analysis:
+            {json.dumps(column_details, indent=2)}
+            
+            For each column, analyze:
+            1. Column name semantics (what the name suggests)
+            2. Actual data content (what the values reveal)
+            3. Business context (what this data represents)
+            
+            Provide analysis in this JSON format:
+            {{
+                "table_purpose": "inferred_business_purpose_based_on_all_columns_and_data",
+                "data_source": "likely_platform_or_system_this_came_from",
+                "column_semantics": {{
+                    "column_name": {{
+                        "semantic_type": "email|name|company|phone|address|identifier|text|number|date|url|social|industry|title|location|other",
+                        "confidence": 0.95,
+                        "description": "what_this_column_represents_based_on_name_and_data",
+                        "data_pattern": "observed_pattern_in_actual_values",
+                        "business_value": "how_valuable_this_data_is_for_business_use",
+                        "data_quality": "assessment_based_on_completeness_and_consistency"
+                    }}
+                }},
+                "data_patterns": {{
+                    "primary_entity": "what_each_row_represents_based_on_data_analysis",
+                    "identifier_candidates": ["columns_that_could_uniquely_identify_records"],
+                    "contact_info": ["email_phone_address_columns"],
+                    "personal_data": ["name_title_demographic_columns"],
+                    "business_data": ["company_job_industry_columns"],
+                    "behavioral_data": ["engagement_activity_preference_columns"],
+                    "metadata": ["system_timestamp_source_columns"]
+                }},
+                "quality_assessment": {{
+                    "overall_completeness": "percentage_of_complete_data",
+                    "data_consistency": "how_consistent_the_formats_are",
+                    "potential_duplicates": "likelihood_of_duplicate_records",
+                    "enrichment_level": "how_enriched_this_data_appears"
+                }},
+                "source_identification": {{
+                    "platform_confidence": 0.85,
+                    "platform_indicators": ["specific_patterns_that_suggest_the_source"],
+                    "export_type": "contact_list|lead_export|crm_export|social_export|other"
                 }}
-            }},
-            "data_patterns": {{
-                "primary_entity": "what_each_row_represents_based_on_data_analysis",
-                "identifier_candidates": ["columns_that_could_uniquely_identify_records"],
-                "contact_info": ["email_phone_address_columns"],
-                "personal_data": ["name_title_demographic_columns"],
-                "business_data": ["company_job_industry_columns"],
-                "behavioral_data": ["engagement_activity_preference_columns"],
-                "metadata": ["system_timestamp_source_columns"]
-            }},
-            "quality_assessment": {{
-                "overall_completeness": "percentage_of_complete_data",
-                "data_consistency": "how_consistent_the_formats_are",
-                "potential_duplicates": "likelihood_of_duplicate_records",
-                "enrichment_level": "how_enriched_this_data_appears"
-            }},
-            "source_identification": {{
-                "platform_confidence": 0.85,
-                "platform_indicators": ["specific_patterns_that_suggest_the_source"],
-                "export_type": "contact_list|lead_export|crm_export|social_export|other"
             }}
-        }}
-        
-        Focus on understanding what each column actually contains by examining the real data values.
-        Consider data patterns, naming conventions, and business context.
-        Return only valid JSON, no explanations.
-        """
+            
+            Focus on understanding what each column actually contains by examining the real data values.
+            Consider data patterns, naming conventions, and business context.
+            Return only valid JSON, no explanations.
+        """).strip()
         
         try:
             response = self.client.chat.completions.create(
@@ -263,94 +264,94 @@ class AdaptiveMerger:
         # Build target context
         target_context = self._build_target_context(target_config)
         
-        prompt = f"""
-        Create a detailed field-by-field ingestion strategy to map unknown CSV data into target table structure:
-        
-        TARGET TABLE SPECIFICATION:
-        {target_context}
-        
-        UNKNOWN SOURCE DATA ANALYSIS:
-        File: {unknown_analysis.get('file_path', 'unknown')}
-        Purpose: {unknown_analysis.get('table_purpose', 'unknown')}
-        Data Source: {unknown_analysis.get('data_source', 'unknown')}
-        
-        Source Column Details:
-        {json.dumps(unknown_analysis.get('column_semantics', {}), indent=2)}
-        
-        For each target column, determine the best merge strategy. Available strategies:
-        - "replace": Completely replace target column with mapped source column
-        - "prompt_merge": Use LLM to intelligently combine target and source data
-        - "concat": Concatenate target and source values with separator
-        - "derive": Create new value by combining multiple source columns
-        - "preserve": Keep existing target data, ignore source
-        - "transform": Apply specific transformation (regex, format, etc.)
-        
-        Create strategy in this JSON format:
-        {{
-            "field_strategies": {{
-                "target_column_name": {{
-                    "strategy": "replace|prompt_merge|concat|derive|preserve|transform",
-                    "source_mapping": ["source_column1", "source_column2"],
-                    "confidence": 0.95,
-                    "reasoning": "why_this_strategy_was_chosen",
-                    "transformation_rule": "if_transform_strategy_what_rule_to_apply",
-                    "prompt_template": "if_prompt_merge_the_LLM_prompt_to_use",
-                    "fallback_strategy": "what_to_do_if_primary_strategy_fails"
-                }}
-            }},
-            "unmapped_source_columns": {{
-                "source_column": {{
-                    "reason": "why_this_column_was_not_mapped",
-                    "potential_use": "possible_future_use_for_this_data",
-                    "action": "ignore|store_as_metadata|create_new_target_column"
-                }}
-            }},
-            "data_quality_rules": {{
-                "deduplication": {{
-                    "strategy": "email_based|name_company_based|custom",
-                    "key_fields": ["fields_to_use_for_duplicate_detection"],
-                    "resolution": "prefer_target|prefer_source|merge_both"
+        prompt = textwrap.dedent(f"""
+            Create a detailed field-by-field ingestion strategy to map unknown CSV data into target table structure:
+            
+            TARGET TABLE SPECIFICATION:
+            {target_context}
+            
+            UNKNOWN SOURCE DATA ANALYSIS:
+            File: {unknown_analysis.get('file_path', 'unknown')}
+            Purpose: {unknown_analysis.get('table_purpose', 'unknown')}
+            Data Source: {unknown_analysis.get('data_source', 'unknown')}
+            
+            Source Column Details:
+            {json.dumps(unknown_analysis.get('column_semantics', {}), indent=2)}
+            
+            For each target column, determine the best merge strategy. Available strategies:
+            - "replace": Completely replace target column with mapped source column
+            - "prompt_merge": Use LLM to intelligently combine target and source data
+            - "concat": Concatenate target and source values with separator
+            - "derive": Create new value by combining multiple source columns
+            - "preserve": Keep existing target data, ignore source
+            - "transform": Apply specific transformation (regex, format, etc.)
+            
+            Create strategy in this JSON format:
+            {{
+                "field_strategies": {{
+                    "target_column_name": {{
+                        "strategy": "replace|prompt_merge|concat|derive|preserve|transform",
+                        "source_mapping": ["source_column1", "source_column2"],
+                        "confidence": 0.95,
+                        "reasoning": "why_this_strategy_was_chosen",
+                        "transformation_rule": "if_transform_strategy_what_rule_to_apply",
+                        "prompt_template": "if_prompt_merge_the_LLM_prompt_to_use",
+                        "fallback_strategy": "what_to_do_if_primary_strategy_fails"
+                    }}
                 }},
-                "validation": {{
-                    "email_validation": true,
-                    "phone_formatting": true,
-                    "name_standardization": true
+                "unmapped_source_columns": {{
+                    "source_column": {{
+                        "reason": "why_this_column_was_not_mapped",
+                        "potential_use": "possible_future_use_for_this_data",
+                        "action": "ignore|store_as_metadata|create_new_target_column"
+                    }}
                 }},
-                "cleanup": {{
-                    "trim_whitespace": true,
-                    "standardize_formats": true,
-                    "handle_nulls": "preserve|replace_with_empty|skip"
+                "data_quality_rules": {{
+                    "deduplication": {{
+                        "strategy": "email_based|name_company_based|custom",
+                        "key_fields": ["fields_to_use_for_duplicate_detection"],
+                        "resolution": "prefer_target|prefer_source|merge_both"
+                    }},
+                    "validation": {{
+                        "email_validation": true,
+                        "phone_formatting": true,
+                        "name_standardization": true
+                    }},
+                    "cleanup": {{
+                        "trim_whitespace": true,
+                        "standardize_formats": true,
+                        "handle_nulls": "preserve|replace_with_empty|skip"
+                    }}
+                }},
+                "ingestion_plan": {{
+                    "processing_order": ["order_of_field_processing"],
+                    "conflict_resolution": "how_to_handle_data_conflicts",
+                    "error_handling": "continue|stop|log_and_continue",
+                    "validation_checks": ["checks_to_perform_after_ingestion"]
+                }},
+                "confidence_score": 0.92,
+                "risk_assessment": {{
+                    "data_loss_risk": "low|medium|high",
+                    "quality_impact": "positive|neutral|negative",
+                    "schema_compatibility": "excellent|good|fair|poor"
+                }},
+                "execution_summary": {{
+                    "total_fields_mapped": 5,
+                    "fields_requiring_llm": 2,
+                    "complex_transformations": 1,
+                    "estimated_processing_time": "fast|medium|slow"
                 }}
-            }},
-            "ingestion_plan": {{
-                "processing_order": ["order_of_field_processing"],
-                "conflict_resolution": "how_to_handle_data_conflicts",
-                "error_handling": "continue|stop|log_and_continue",
-                "validation_checks": ["checks_to_perform_after_ingestion"]
-            }},
-            "confidence_score": 0.92,
-            "risk_assessment": {{
-                "data_loss_risk": "low|medium|high",
-                "quality_impact": "positive|neutral|negative",
-                "schema_compatibility": "excellent|good|fair|poor"
-            }},
-            "execution_summary": {{
-                "total_fields_mapped": 5,
-                "fields_requiring_llm": 2,
-                "complex_transformations": 1,
-                "estimated_processing_time": "fast|medium|slow"
             }}
-        }}
-        
-        Consider:
-        - Target column descriptions and business requirements
-        - Source data quality and semantic meaning
-        - Best strategy for each individual field
-        - How to handle conflicts and missing data
-        - Data validation and quality preservation
-        
-        Return only valid JSON, no explanations.
-        """
+            
+            Consider:
+            - Target column descriptions and business requirements
+            - Source data quality and semantic meaning
+            - Best strategy for each individual field
+            - How to handle conflicts and missing data
+            - Data validation and quality preservation
+            
+            Return only valid JSON, no explanations.
+        """).strip()
         
         try:
             response = self.client.chat.completions.create(

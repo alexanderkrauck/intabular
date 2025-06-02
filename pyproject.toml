@@ -9,10 +9,10 @@ description = "Intelligent Table Data Ingestion - AI-powered CSV mapping and sch
 readme = "README.md"
 license = "MIT"
 authors = [
-    {name = "Alexander Krauck", email = "your-email@example.com"}
+    {name = "Alexander Krauck", email = "alexander.krauck@gmail.com"}
 ]
 maintainers = [
-    {name = "Alexander Krauck", email = "your-email@example.com"}
+    {name = "Alexander Krauck", email = "alexander.krauck@gmail.com"}
 ]
 keywords = ["csv", "data-ingestion", "ai", "llm", "data-mapping", "schema-alignment", "pandas"]
 classifiers = [
@@ -49,10 +49,10 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/yourusername/intabular"
-Documentation = "https://github.com/yourusername/intabular#readme"
-Repository = "https://github.com/yourusername/intabular.git"
-"Bug Tracker" = "https://github.com/yourusername/intabular/issues"
+Homepage = "https://github.com/alexanderkrauck/intabular"
+Documentation = "https://github.com/alexanderkrauck/intabular#readme"
+Repository = "https://github.com/alexanderkrauck/intabular.git"
+"Bug Tracker" = "https://github.com/alexanderkrauck/intabular/issues"
 
 [project.scripts]
 intabular = "intabular.__main__:main"

@@ -1,5 +1,6 @@
 """
 Main entry point for InTabular - Intelligent CSV data ingestion system.
+Core business logic for 4 ingestion modes.
 """
 
 import sys
@@ -7,7 +8,7 @@ import os
 import yaml
 import pandas as pd
 from pathlib import Path
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Union, Tuple
 from openai import OpenAI
 
 from intabular.core.analyzer import DataframeAnalyzer
@@ -63,170 +64,116 @@ def setup_llm_client() -> OpenAI:
     return client
 
 
-def run_ingestion_pipeline(yaml_config_file: str, csv_to_ingest: str) -> pd.DataFrame:
-    """Run the complete intelligent CSV ingestion pipeline"""
+# =============================================================================
+# CORE INGESTION MODES
+# =============================================================================
+
+def ingest_with_implicit_schema(df_ingest: pd.DataFrame, df_target: pd.DataFrame) -> Tuple[pd.DataFrame, GatekeeperConfig]:
+    """
+    Mode 1: Merge df_ingest into df_target with implicit schema inference - IMPLEMENTED.
     
+    Args:
+        df_ingest: DataFrame to be ingested
+        df_target: Target DataFrame to merge into
+        
+    Returns:
+        Tuple[pd.DataFrame, GatekeeperConfig]: (merged_df, inferred_schema)
+    """
     logger = get_logger('main')
+    logger.info(f"Mode 1: Implicit schema ingestion - {len(df_ingest)} rows into {len(df_target)} target rows")
     
-    logger.info(f"Starting ingestion pipeline: {csv_to_ingest} -> {yaml_config_file}")
+    # Step 1: Use Mode 4 to infer schema from df_target
+    inferred_schema = infer_schema_from_target(df_target, "Implicitly inferred schema from target structure")
+    logger.info(f"Inferred schema with {len(inferred_schema.get_enrichment_column_names())} columns")
+    
+    # Step 2: Use Mode 3 to do the actual ingestion with inferred schema
+    result_df = ingest_with_explicit_schema(df_ingest, df_target, inferred_schema)
+    
+    logger.info(f"Mode 1 complete: {len(result_df)} total rows with inferred schema")
+    return result_df, inferred_schema
+
+
+def ingest_to_schema(df_ingest: pd.DataFrame, schema: GatekeeperConfig) -> pd.DataFrame:
+    """
+    Mode 2: Transform df_ingest to match schema (no existing target) - IMPLEMENTED.
+    
+    Args:
+        df_ingest: DataFrame to be transformed
+        schema: Target schema configuration
+        
+    Returns:
+        pd.DataFrame: Transformed DataFrame matching schema
+    """
+    logger = get_logger('main')
+    logger.info(f"Mode 2: Schema transformation - {len(df_ingest)} rows to schema")
+    
+    # Create empty df_target with schema columns
+    df_target = pd.DataFrame(columns=schema.get_enrichment_column_names())
+    logger.info(f"Created empty target with {len(schema.get_enrichment_column_names())} columns")
+    
+    # Use Mode 3 with empty target
+    return ingest_with_explicit_schema(df_ingest, df_target, schema)
+
+
+def ingest_with_explicit_schema(df_ingest: pd.DataFrame, df_target: pd.DataFrame, schema: GatekeeperConfig) -> pd.DataFrame:
+    """
+    Mode 3: Merge df_ingest into df_target with explicit schema (IMPLEMENTED).
+    
+    Args:
+        df_ingest: DataFrame to be ingested
+        df_target: Target DataFrame to merge into
+        schema: Explicit schema configuration
+        
+    Returns:
+        pd.DataFrame: Merged DataFrame
+    """
+    logger = get_logger('main')
+    logger.info(f"Mode 3: Explicit schema ingestion - {len(df_ingest)} + {len(df_target)} rows")
     
     # Initialize components
     client = setup_llm_client()
-    
-    # Load target configuration
-    target_config = GatekeeperConfig.from_yaml(yaml_config_file)
-    
-    analyzer = DataframeAnalyzer(client, target_config)
+    analyzer = DataframeAnalyzer(client, schema)
     strategy_creator = DataframeIngestionStrategy(client)
     processor = DataframeIngestionProcessor(client)
     
+    logger.info(f"Schema: {schema.purpose[:80]}... ({len(schema.get_enrichment_column_names())} columns)")
 
-    
-    logger.info(f"Target: {target_config.purpose[:80]}... ({len(target_config.get_enrichment_column_names())} columns)")
-        
-
-    # Read the CSV to ingest and the target table
-    df_to_ingest = pd.read_csv(csv_to_ingest)#TODO This already assumes we have a header
-    df_to_enrich = pd.read_csv(target_config.target_file_path) if Path(target_config.target_file_path).exists() else pd.DataFrame(columns=target_config.get_enrichment_column_names())
-    
-    # Analyze the CSV
-    logger.info("Analyzing CSV...")
-    df_analysis = analyzer.analyze_dataframe_structure(df_to_ingest)
-    
+    # Analyze the ingestion DataFrame
+    logger.info("Analyzing ingestion DataFrame...")
+    df_analysis = analyzer.analyze_dataframe_structure(df_ingest)
     
     # Create intelligent strategy
     logger.info("Creating field-mapping strategy...")
-    strategy = strategy_creator.create_ingestion_strategy(target_config, df_analysis)
+    strategy = strategy_creator.create_ingestion_strategy(schema, df_analysis)
     
     # Execute ingestion
     logger.info("Executing ingestion...")
-    enriched_df = processor.execute_ingestion(
-    df_to_ingest,
-    df_to_enrich,
+    result_df = processor.execute_ingestion(
+        df_ingest,
+        df_target,
     strategy,
-    target_config,
+        schema,
     df_analysis.general_ingestion_analysis
     )
     
-    # Save results
-    enriched_df.to_csv(target_config.target_file_path, index=False)
-    
-    # Final summary
-    logger.info(f"Ingestion complete: {len(enriched_df)} rows saved to {target_config.target_file_path}")
-    
-    return enriched_df
+    logger.info(f"Ingestion complete: {len(result_df)} total rows")
+    return result_df
 
 
-def infer_config_from_table(table_path: str, purpose: str) -> GatekeeperConfig:
-    """Infer configuration from an existing table structure"""
+def infer_schema_from_target(df_target: pd.DataFrame, purpose: str = "Inferred schema") -> GatekeeperConfig:
+    """
+    Mode 4: Analyze df_target and return inferred schema.
     
-    logger = get_logger('main')
-    
-    if Path(table_path).exists():
-        logger.info(f"Inferring schema from existing table: {table_path}")
-        df = pd.read_csv(table_path)
-        enrichment_columns = list(df.columns)
-        logger.info(f"Found {len(enrichment_columns)} columns")
-    else:
-        # Default enrichment columns
-        enrichment_columns = ["email", "first_name", "last_name", "company", "title", "phone", "website"]
-        logger.warning(f"Table not found, using default columns: {enrichment_columns}")
-    
-    return GatekeeperConfig(
-        purpose=purpose,
-        enrichment_columns=enrichment_columns
-    )
-
-
-def create_config(table_path: str, purpose: str, output_yaml: Optional[str] = None) -> str:
-    """Create a YAML configuration file for a table"""
-    
-    logger = get_logger('main')
-    
-    config = infer_config_from_table(table_path, purpose)
-    
-    yaml_file = output_yaml or f"{Path(table_path).stem}_config.yaml"
-    config.to_yaml(yaml_file)
-    
-    logger.info(f"Configuration saved: {yaml_file} ({len(config.get_enrichment_column_names())} columns)")
-    
-    return yaml_file
-
-
-def show_usage():
-    """Display usage information"""
-    logger = get_logger('main')
-    
-    logger.info("Usage:")
-    logger.info("  python -m intabular <yaml_config> <csv_file>     # Ingest CSV")
-    logger.info("  python -m intabular config <table> <purpose>     # Create config")
-    logger.info("  python -m intabular analyze <csv_file>           # Analyze CSV")
-
-
-def handle_config_command(args):
-    """Handle the config creation command"""
-    logger = get_logger('main')
-    
-    if len(args) < 4:
-        logger.error("Usage: python -m intabular config <table_path> <purpose>")
-        return
-    
-    table_path = args[2]
-    purpose = args[3]
-    
-    create_config(table_path, purpose)
-
-
-def handle_ingestion_command(args):
-    """Handle the main ingestion command"""
-    logger = get_logger('main')
-    
-    if len(args) < 3:
-        logger.error("Usage: python -m intabular <yaml_config> <csv_file>")
-        return
-    
-    yaml_config = args[1]
-    csv_file = args[2]
-    output_file = args[3] if len(args) > 3 else None
-    
-    try:
-        result = run_ingestion_pipeline(yaml_config, csv_file, output_file)
-        logger.info(f"Successfully ingested {len(result)} rows")
+    Args:
+        df_target: DataFrame to analyze
+        purpose: Business purpose description
         
-    except Exception as e:
-        logger.error(f"Error: {e}")
-
-
-def main():
-    """Main entry point with enhanced logging"""
-    
-    # Set up logging first
-    log_file = os.getenv('INTABULAR_LOG_FILE', 'logs/intabular.log')
-    log_level = os.getenv('INTABULAR_LOG_LEVEL', 'INFO')
-    json_format = os.getenv('INTABULAR_LOG_JSON', 'false').lower() == 'true'
-    
-    setup_logging(
-        level=log_level,
-        log_file=log_file,
-        console_output=True,
-        json_format=json_format
-    )
-    
+    Returns:
+        GatekeeperConfig: Inferred schema configuration
+    """
     logger = get_logger('main')
+    logger.info(f"Mode 4: Schema inference from {len(df_target)} rows, {len(df_target.columns)} columns")
     
-    args = sys.argv
-    
-    if len(args) < 2:
-        show_usage()
-        return
-    
-    # Route commands
-    if args[1] == "config":
-        handle_config_command(args)
-    else:
-        # Default: ingestion
-        handle_ingestion_command(args)
-
-
-if __name__ == "__main__":
-    main() 
+    # TODO: Implement intelligent schema inference from DataFrame structure
+    # TODO: Analyze column types, patterns, sample data to infer semantic meaning
+    raise NotImplementedError("Mode 4: Schema inference not yet implemented")
