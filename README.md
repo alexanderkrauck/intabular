@@ -511,7 +511,7 @@ $g_w(A, D, I) \rightarrow D'$
 
 This essentially means that the gatekeeper is a function of the current knowledge and the incoming information, producing a new curated data structure $D'$.
 
-More generally, it holds that for any $d \in D$ (i.e., a unit of knowledge), we can define:
+More generally, it holds that for any $d \in D$ (i.e., a unit of knowledge), we can define (I KNOW THIS IS NOT CORRECT FORMALLY - WILL FIX LATER):
 
 $g_w(A, D, I) = \forall d \in D,\ g_{d_w}(A, d, I)$
 
