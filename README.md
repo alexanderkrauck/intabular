@@ -259,8 +259,8 @@ InTabular is designed with privacy in mind:
 pip install intabular
 
 # Development installation
-git clone https://github.com/alexanderkrauck/MailPipe.git
-cd MailPipe
+git clone https://github.com/alexanderkrauck/intabular.git
+cd intabular
 pip install -e .
 ```
 
