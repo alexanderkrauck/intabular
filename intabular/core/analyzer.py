@@ -44,6 +44,8 @@ class DataframeAnalyzer:
     def __init__(self, openai_client: OpenAI, gatekeeper_config: GatekeeperConfig):
         self.client = openai_client
         self.sample_rows = gatekeeper_config.sample_rows  # Configurable number of rows to analyze
+        # Number of rows to use when analyzing the dataframe structure with the LLM
+        self.df_analysis_rows = int(os.getenv("INTABULAR_DF_ANALYSIS_ROWS", "2"))
         self.logger = get_logger('analyzer')
     
     def analyze_dataframe_structure(self, df: pd.DataFrame, additional_info: str = None) -> DataframeAnalysis:
@@ -126,7 +128,11 @@ class DataframeAnalyzer:
         self.logger.debug("Basic structure validated")
     
     def _analyze_dataframe_with_llm(self, df: pd.DataFrame, additional_info: str) -> dict:
-        """Use LLM to analyze DF structure and semantic purpose by examining first two rows"""
+        """Use LLM to analyze DF structure and semantic purpose.
+
+        The number of data rows inspected can be configured via the
+        ``INTABULAR_DF_ANALYSIS_ROWS`` environment variable (default ``2``).
+        """
         
         try:
             if len(df) < 1:
@@ -135,9 +141,11 @@ class DataframeAnalyzer:
                     assumption_type="data_presence"
                 )
             
-            # Get first two rows from the DataFrame
+            # Get the header and sample data rows from the DataFrame
             header = df.columns.tolist()
-            first_row = df.iloc[0].astype(str).tolist() if len(df) >= 1 else []
+            num_rows = min(self.df_analysis_rows, len(df))
+            sampled_rows = [df.iloc[i].astype(str).tolist() for i in range(num_rows)]
+            rows_text = "\n".join([f"ROW {i + 1}: {row}" for i, row in enumerate(sampled_rows)])
             
             # Response schema for comprehensive DF analysis
             response_schema = {
@@ -155,7 +163,7 @@ class DataframeAnalyzer:
                 Analyze this Dataframe to understand both its structure and semantic purpose:
                 
                 FIRST ROW/HEADER: {header}
-                {f"SECOND ROW: {first_row}" if first_row else "ONLY ONE ROW AVAILABLE"}
+                {rows_text}
                 
                 ADDITIONAL CONTEXT (for reference only, not definitive): {additional_info}
                 Note: The additional context above is supplementary information that may provide hints 
