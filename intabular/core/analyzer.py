@@ -172,7 +172,7 @@ class DataframeAnalyzer:
                 
                 Please determine:
                 
-                1. HEADER DETECTION: Does the first row contain column headers or actual data/palceholder values?
+                1. HEADER DETECTION: Does the first row contain column headers or actual data/placeholder values?
                    - Headers: descriptive names like ["name", "email", "company", "first_name"]  
                    - Data: actual values like ["John Smith", "john@example.com", "Acme Corp"] or placeholder values like ["1", "2", "3"]
                 
