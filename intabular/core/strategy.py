@@ -249,6 +249,10 @@ class DataframeIngestionStrategy:
                     "examples": [
                         "email.strip().lower()",
                         "f'{{first_name.strip().lower()}} {{last_name.strip().lower()}}'",
+                        "join(' ', first_name, last_name)",
+                        "concat(first_name, ' - ', last_name)",
+                        "append(current, notes)",
+                        "safe_format('{{}} ({{}})', company_name, department)",
                         "re.sub(r'[^\\d]', '', phone)[:10]",
                         "f'Current: {{current}}, Notes: {{notes}}'",
                         "notes",

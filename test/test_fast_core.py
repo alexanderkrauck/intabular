@@ -31,6 +31,38 @@ class TestCoreTransformations:
         for source_data, rule, expected in test_cases:
             result = mock_processor.execute_transformation(rule, source_data)
             assert result == expected, f"Transform failed: {rule} with {source_data}"
+
+    @pytest.mark.no_llm
+    @pytest.mark.unit
+    def test_string_addition_functions(self, mock_processor):
+        """Test new string addition utility functions"""
+        test_cases = [
+            # Test join function - filters empty/None values
+            ({'first_name': 'John', 'last_name': 'Doe'}, 'join(" ", first_name, last_name)', 'John Doe'),
+            ({'first_name': 'John', 'middle_name': '', 'last_name': 'Doe'}, 'join(", ", first_name, middle_name, last_name)', 'John, Doe'),
+            ({'first_name': 'John', 'last_name': 'Doe'}, 'join("-", first_name, last_name)', 'John-Doe'),
+            
+            # Test concat function - concatenates all values
+            ({'first_name': 'John', 'last_name': 'Doe'}, 'concat(first_name, last_name)', 'JohnDoe'),
+            ({'first_name': 'John', 'last_name': 'Doe'}, 'concat(first_name, " ", last_name)', 'John Doe'),
+            ({'name': 'World'}, 'concat("Hello ", name, "!")', 'Hello World!'),
+            
+            # Test safe_format function
+            ({'name': 'World'}, 'safe_format("Hello {}", name)', 'Hello World'),
+            ({'first_name': 'John', 'last_name': 'Doe'}, 'safe_format("{} {}", first_name, last_name)', 'John Doe'),
+            
+            # Test append function - adds with automatic spacing
+            ({'prefix': 'Note:', 'content': 'Important'}, 'append(prefix, content)', 'Note: Important'),
+            ({'first_name': 'John', 'last_name': 'Doe'}, 'append("Start", first_name, last_name)', 'Start John Doe'),
+        ]
+        
+        for source_data, rule, expected in test_cases:
+            result = mock_processor.execute_transformation(rule, source_data)
+            assert result == expected, f"String addition failed: {rule} with {source_data}"
+
+        # Test append with current value
+        result = mock_processor.execute_transformation('append(current, notes)', {'notes': 'New note'}, 'Old note')
+        assert result == 'Old note New note', "Append with current value failed"
     
     @pytest.mark.no_llm  
     @pytest.mark.unit

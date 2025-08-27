@@ -16,6 +16,33 @@ from intabular.core.config import GatekeeperConfig
 from .logging_config import get_logger
 from .llm_logger import log_llm_call
 
+def _join_strings(separator, *strings):
+    """Join multiple strings with a separator, filtering out None and empty values"""
+    filtered_strings = [str(s) for s in strings if s is not None and str(s).strip()]
+    return separator.join(filtered_strings)
+
+def _concat_strings(*strings):
+    """Concatenate multiple strings, filtering out None values"""
+    return ''.join(str(s) for s in strings if s is not None)
+
+def _safe_format(template, *args, **kwargs):
+    """Safe string formatting that handles missing keys gracefully"""
+    try:
+        return template.format(*args, **kwargs)
+    except (KeyError, IndexError, ValueError):
+        return template
+
+def _append_string(base, *additions):
+    """Append strings to a base string with automatic spacing"""
+    base_str = str(base) if base is not None else ""
+    for addition in additions:
+        if addition is not None and str(addition).strip():
+            addition_str = str(addition).strip()
+            if base_str and not base_str.endswith(' '):
+                base_str += ' '
+            base_str += addition_str
+    return base_str
+
 SAFE_NAMESPACE = {
             're': re,
             'str': str,
@@ -31,6 +58,11 @@ SAFE_NAMESPACE = {
             'dict': dict,
             'set': set,
             'tuple': tuple,
+            # String manipulation utilities
+            'join': _join_strings,
+            'concat': _concat_strings,
+            'safe_format': _safe_format,
+            'append': _append_string,
         }
 
 
