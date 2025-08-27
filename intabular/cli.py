@@ -15,6 +15,7 @@ def show_usage():
     logger.info("Usage:")
     logger.info("  python -m intabular <yaml_config> <csv_file>     # Ingest CSV")
     logger.info("  python -m intabular config <table> <purpose>     # Create config")
+    logger.info("  python -m intabular add <yaml_config> <description>  # Add data from prose")
 
 
 def handle_config_command(args):
@@ -30,6 +31,26 @@ def handle_config_command(args):
     
     from intabular.csv_component import create_config_from_csv
     create_config_from_csv(table_path, purpose)
+
+
+def handle_add_command(args):
+    """Handle the prose-based data addition command"""
+    logger = get_logger('cli')
+    
+    if len(args) < 4:
+        logger.error("Usage: python -m intabular add <yaml_config> <description>")
+        return
+    
+    yaml_config = args[2]
+    description = args[3]
+    
+    try:
+        from intabular.csv_component import add_prose_to_table
+        result = add_prose_to_table(yaml_config, description)
+        logger.info(f"Successfully added 1 row from prose description. Table now has {len(result)} rows")
+        
+    except Exception as e:
+        logger.error(f"Error: {e}")
 
 
 def handle_ingestion_command(args):
@@ -78,6 +99,8 @@ def main():
     # Route commands
     if args[1] == "config":
         handle_config_command(args)
+    elif args[1] == "add":
+        handle_add_command(args)
     else:
         # Default: ingestion
         handle_ingestion_command(args) 
